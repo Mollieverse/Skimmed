@@ -51,8 +51,9 @@ function parseSwap(tx) {
   const msg  = tx.raw_transaction?.transaction?.message;
   const allMints = [...new Set([...pre.map(b => b.mint), ...post.map(b => b.mint)])];
   const deltas   = allMints.map(mint => {
-    const preAmt  = pre.find(b  => b.mint === mint)?.uiTokenAmount?.uiAmount  || 0;
-    const postAmt = post.find(b => b.mint === mint)?.uiTokenAmount?.uiAmount || 0;
+    // Coerce to Number — SIM may return strings
+    const preAmt  = Number(pre.find(b  => b.mint === mint)?.uiTokenAmount?.uiAmount  || 0);
+    const postAmt = Number(post.find(b => b.mint === mint)?.uiTokenAmount?.uiAmount || 0);
     return { mint, delta: postAmt - preAmt };
   }).filter(d => Math.abs(d.delta) > 0.000001);
 
@@ -153,15 +154,20 @@ export default async function handler(req, res) {
     const attacks = [];
 
     for (const swap of swapDeltas) {
-      const { inputMint, outputMint, inputAmount, outputAmount, blockSlot, blockTime, dexLabel } = swap;
+      const { inputMint, outputMint, blockSlot, blockTime, dexLabel } = swap;
+      const inputAmount  = Number(swap.inputAmount)  || 0;
+      const outputAmount = Number(swap.outputAmount) || 0;
+      if (inputAmount === 0) continue;
+
       const expected    = inputAmount * 0.997;
       const slippagePct = Math.max(0, ((expected - outputAmount) / expected) * 100);
       if (slippagePct < THRESHOLD) continue;
 
       const lossInToken = Math.max(0, expected - outputAmount);
-      const price       = priceMap[outputMint] || 0;
+      const price       = Number(priceMap[outputMint]) || 0;
+      const inputPrice  = Number(priceMap[inputMint])  || 0;
       const lossUsd     = parseFloat((lossInToken * price).toFixed(2));
-      const inputUsd    = parseFloat((inputAmount * (priceMap[inputMint] || 0)).toFixed(2));
+      const inputUsd    = parseFloat((inputAmount * inputPrice).toFixed(2));
 
       const confidence  = slippagePct >= 3.5 ? "HIGH" : slippagePct >= 2.0 ? "MEDIUM" : "LOW";
       const label       = confidence === "HIGH"   ? "High Confidence MEV Pattern"
@@ -232,7 +238,7 @@ export default async function handler(req, res) {
       portfolio = balancesResult.value.balances
         .map(b => {
           const mint    = b.address || b.mint;
-          const amount  = b.amount  || b.ui_amount || 0;
+          const amount  = Number(b.amount || b.ui_amount || b.balance || 0);
           const meta    = tokenList[mint] || {};
           const price   = priceMap[mint]  || 0;
           return {
@@ -288,4 +294,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
-
