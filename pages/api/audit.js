@@ -237,22 +237,31 @@ export default async function handler(req, res) {
     if (balancesResult.status === "fulfilled" && balancesResult.value?.balances) {
       portfolio = balancesResult.value.balances
         .map(b => {
-          const mint    = b.address || b.mint;
-          const amount  = Number(b.amount || b.ui_amount || b.balance || 0);
-          const meta    = tokenList[mint] || {};
-          const price   = priceMap[mint]  || 0;
+          const mint = b.address || b.mint || b.token_address || null;
+          if (!mint) return null;
+
+          // Try every possible SIM field shape, coerce to Number
+          const rawAmount = b.amount ?? b.ui_amount ?? b.balance ?? b.uiAmount ?? 0;
+          const amount    = Number(rawAmount) || 0;
+          if (amount <= 0) return null;
+
+          const meta   = tokenList[mint] || {};
+          const price  = Number(priceMap[mint] || b.price_usd || b.price || 0);
+          const symbol = meta.symbol || b.symbol || mint.slice(0,4);
+          const name   = meta.name   || b.name   || symbol;
+
           return {
             mint,
-            symbol:   meta.symbol  || b.symbol  || mint.slice(0,4),
-            name:     meta.name    || b.name    || "Unknown",
-            logoURI:  meta.logoURI || null,
+            symbol,
+            name,
+            logoURI:  meta.logoURI || b.logo || b.icon || null,
             amount:   parseFloat(amount.toFixed(6)),
-            display:  formatBalance(amount),
+            display:  formatBalance(amount) || String(amount),
             price,
             valueUsd: parseFloat((amount * price).toFixed(2)),
           };
         })
-        .filter(t => t.amount > 0 && t.valueUsd > 0.01)
+        .filter(t => t && t.amount > 0 && t.valueUsd > 0.01)
         .sort((a,b) => b.valueUsd - a.valueUsd)
         .slice(0, 20);
       portfolioTotal = parseFloat(portfolio.reduce((s,t) => s+t.valueUsd, 0).toFixed(2));
@@ -294,3 +303,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
+
