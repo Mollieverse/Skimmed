@@ -132,35 +132,44 @@ function Portfolio({ portfolio, total }) {
         <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Portfolio Snapshot</span>
         <span style={{fontFamily:"var(--mono)",fontSize:15,color:"var(--gold)",fontWeight:600}}>${total?.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
-      {portfolio.map((t,i)=>(
-        <div key={i} style={{display:"flex",alignItems:"center",padding:"14px 18px",borderBottom:i<portfolio.length-1?"1px solid #0d0b09":"none",gap:14}}>
-          <div style={{width:44,height:44,borderRadius:"50%",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
-            background:t.logoURI&&!imgErrors[t.mint]?"#1a1a1a":"linear-gradient(135deg,#2a1f00,#1a1200)",
-            border:t.logoURI&&!imgErrors[t.mint]?"1px solid var(--border)":"1px solid rgba(200,134,10,.3)"}}>
-            {t.logoURI&&!imgErrors[t.mint]?(
-              <img src={t.logoURI} alt={t.symbol} width={44} height={44} style={{objectFit:"cover",width:"100%",height:"100%"}}
-                onError={()=>setImgErrors(e=>({...e,[t.mint]:true}))}/>
-            ):(
-              <span style={{fontFamily:"var(--mono)",fontSize:11,fontWeight:700,color:"var(--gold)",textTransform:"uppercase",letterSpacing:"0.05em"}}>
-                {t.symbol.slice(0,3)}
-              </span>
-            )}
-          </div>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontFamily:"var(--mono)",fontSize:15,color:"var(--text)",fontWeight:500}}>{t.symbol}</div>
-            <div style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{t.name}</div>
-          </div>
-          <div style={{textAlign:"right",minWidth:80}}>
-            <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)"}}>{t.display}</div>
-            <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>@ ${t.price>=1?t.price.toFixed(2):t.price.toFixed(6)}</div>
-          </div>
-          <div style={{textAlign:"right",minWidth:80}}>
-            <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:t.valueUsd>100?"var(--gold)":"var(--text)"}}>
-              ${t.valueUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+      {portfolio.filter(Boolean).map((t,i)=>{
+        const symbol  = t?.symbol  || "TOKEN";
+        const name    = t?.name    || "Unknown";
+        const display = t?.display ?? (t?.amount != null ? String(t.amount) : "0");
+        const price   = Number(t?.price)    || 0;
+        const value   = Number(t?.valueUsd) || 0;
+        const mint    = t?.mint    || `unknown-${i}`;
+        const logo    = t?.logoURI;
+        return (
+          <div key={mint+i} style={{display:"flex",alignItems:"center",padding:"14px 18px",borderBottom:i<portfolio.length-1?"1px solid #0d0b09":"none",gap:14}}>
+            <div style={{width:44,height:44,borderRadius:"50%",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
+              background:logo&&!imgErrors[mint]?"#1a1a1a":"linear-gradient(135deg,#2a1f00,#1a1200)",
+              border:logo&&!imgErrors[mint]?"1px solid var(--border)":"1px solid rgba(200,134,10,.3)"}}>
+              {logo&&!imgErrors[mint]?(
+                <img src={logo} alt={symbol} width={44} height={44} style={{objectFit:"cover",width:"100%",height:"100%"}}
+                  onError={()=>setImgErrors(e=>({...e,[mint]:true}))}/>
+              ):(
+                <span style={{fontFamily:"var(--mono)",fontSize:11,fontWeight:700,color:"var(--gold)",textTransform:"uppercase",letterSpacing:"0.05em"}}>
+                  {String(symbol).slice(0,3)}
+                </span>
+              )}
+            </div>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontFamily:"var(--mono)",fontSize:15,color:"var(--text)",fontWeight:500}}>{symbol}</div>
+              <div style={{fontFamily:"var(--sans)",fontSize:13,color:"var(--muted)",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{name}</div>
+            </div>
+            <div style={{textAlign:"right",minWidth:80}}>
+              <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)"}}>{display}</div>
+              <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>@ ${price>=1?price.toFixed(2):price.toFixed(6)}</div>
+            </div>
+            <div style={{textAlign:"right",minWidth:80}}>
+              <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:value>100?"var(--gold)":"var(--text)"}}>
+                ${value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+              </div>
             </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -713,4 +722,3 @@ export default function Skimmed() {
     </>
   );
 }
-
