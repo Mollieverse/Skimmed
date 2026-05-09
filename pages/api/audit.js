@@ -4,6 +4,7 @@ export const maxDuration = 60;
 import { fetchWalletTransactions, fetchWalletBalances } from "../../lib/sim.js";
 import { fetchLivePrices, fetchTokenList, formatBalance } from "../../lib/prices.js";
 import { generateBriefing, generateProtectionPlan, generateTweetText } from "../../lib/claude.js";
+import { buildTradeLots, detectBadHabits, buildTradingStats } from "../../lib/trading.js";
 
 // ── Solana DEX programs ──────────────────────────────────────────────────────
 const JUPITER  = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
@@ -260,6 +261,12 @@ export default async function handler(req, res) {
 
     console.log(`[audit] ${jupiterQuotes} Jupiter quotes, ${heuristicFallback} heuristic fallback, ${skippedInsane} filtered as anomalies`);
 
+    // ── Trading Autopsy — PNL + bad habits ───────────────────────────────────
+    const tradeLots = buildTradeLots(swapDeltas, priceMap);
+    const tradingStats = buildTradingStats(tradeLots);
+    const badHabits = detectBadHabits(tradeLots, swapDeltas);
+    console.log(`[audit] ${tradeLots.length} closed trade lots, ${badHabits.length} bad habits detected`);
+
     // ── Summary — always builds, even with 0 attacks ─────────────────────────
     const totalSwaps    = swapDeltas.length;
     const cleanSwaps    = totalSwaps - attacks.length;
@@ -339,7 +346,7 @@ export default async function handler(req, res) {
 
     // ── AI narration ──────────────────────────────────────────────────────────
     const [briefing, protectionPlan] = await Promise.all([
-      generateBriefing(summary),
+      generateBriefing(summary, tradingStats, badHabits),
       generateProtectionPlan(summary),
     ]);
     const tweetText = generateTweetText(summary);
@@ -361,6 +368,8 @@ export default async function handler(req, res) {
       success: true,
       wallet:  address,
       summary,
+      tradingStats,
+      badHabits,
       briefing,
       protectionPlan,
       tweetText,
@@ -375,3 +384,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
+
