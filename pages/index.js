@@ -549,13 +549,13 @@ export default function Skimmed() {
               </div>
             </div>
 
-            {S?.attackCount===0?(
-              <div className="au au1" style={{border:"1px solid #182418",background:"rgba(74,222,128,.06)",padding:36,textAlign:"center"}}>
-                <div style={{fontSize:36,marginBottom:14}}>✓</div>
-                <div style={{fontFamily:"var(--serif)",fontSize:26,color:"var(--green-l)",marginBottom:12}}>No MEV patterns detected</div>
-                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)",maxWidth:480,margin:"0 auto",lineHeight:1.7,opacity:0.85}}>{report.briefing}</div>
+            {S?.attackCount === 0 && (
+              <div className="au au1" style={{border:"1px solid #182418",background:"rgba(74,222,128,.06)",padding:"24px 18px",marginBottom:16,textAlign:"center"}}>
+                <div style={{fontSize:28,marginBottom:10}}>✓</div>
+                <div style={{fontFamily:"var(--serif)",fontSize:22,color:"var(--green-l)",marginBottom:8}}>No MEV patterns detected</div>
+                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>Your swap history shows no MEV exposure. Portfolio and historical data still shown below.</div>
               </div>
-            ):(<>
+            )}
 
               <div className="au au1" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",border:"1px solid var(--border)",marginBottom:2}}>
                 {[
@@ -600,7 +600,7 @@ export default function Skimmed() {
 
               <div className="au au2"><Portfolio portfolio={report.portfolio} total={report.portfolioTotal}/></div>
 
-              <div className="au au3" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
+              {S.attackCount > 0 && <div className="au au3" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                 <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Attack History</span>
                   <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--red)",padding:"3px 9px",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)"}}>{S.attackCount} events</span>
@@ -631,7 +631,7 @@ export default function Skimmed() {
                     </div>
                   );
                 })}
-              </div>
+              </div>}
 
               {S.attacksByBot?.length>0&&(
                 <div className="au au3" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
@@ -693,7 +693,6 @@ export default function Skimmed() {
               <div className="au au5"><SimStrip endpoint={report.simRawResponse?.endpoint}/></div>
               <div className="au au6"><DevPanel simRaw={report.simRawResponse}/></div>
 
-            </>)}
           </section>
         )}
 
@@ -718,4 +717,3 @@ export default function Skimmed() {
     </>
   );
 }
-
