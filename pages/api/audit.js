@@ -35,15 +35,20 @@ const MAX_REASONABLE_LOSS_USD = 5000;   // single-attack cap
 const MIN_DETECTABLE_SLIPPAGE = 1.2;    // below = normal DEX fees
 const MAX_SWAPS_TO_ANALYZE    = 30;     // cap Jupiter Quote calls for speed
 
-// ── Filter DEX swaps from SIM (defensive — handles multiple response shapes) ──
+// ── Filter swap transactions — any tx with token movement ──
+// We don't filter by specific DEX programs because Solana has 20+ DEXs (Jupiter, Raydium,
+// Orca, Pump.fun, Meteora, Lifinity, FlashTrade, Phoenix, OpenBook, etc.). Instead, any
+// transaction that has both pre and post token balances with at least 2 different mints
+// represents a token swap regardless of which DEX routed it.
 function filterSwaps(txs) {
   return txs.filter(tx => {
     const meta = getMeta(tx);
     if (!meta || meta.err) return false;
-    const accounts = getAccountKeys(tx);
-    const isDex = accounts.some(k => DEX_SET.has(typeof k === "string" ? k : k?.pubkey || ""));
     const { pre, post } = getTokenBalances(tx);
-    return isDex && pre.length > 0 && post.length > 0;
+    if (pre.length < 1 || post.length < 1) return false;
+    // Need at least 2 different mints involved for a swap (input and output)
+    const allMints = new Set([...pre.map(b => b.mint), ...post.map(b => b.mint)]);
+    return allMints.size >= 2;
   });
 }
 
@@ -400,4 +405,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
-
