@@ -644,7 +644,7 @@ export default function Skimmed() {
                 <div className="au au2" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                   <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                     <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Trading Performance</span>
-                    <span style={{fontFamily:"var(--mono)",fontSize:11,color:report.tradingStats.totalPnl>=0?"var(--green-l)":"var(--red)",padding:"3px 9px",
+                    <span style={{fontFamily:"var(--mono)",fontSize:12,color:report.tradingStats.totalPnl>=0?"var(--green-l)":"var(--red)",padding:"4px 10px",
                       background:report.tradingStats.totalPnl>=0?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",
                       border:`1px solid ${report.tradingStats.totalPnl>=0?"rgba(74,222,128,.25)":"rgba(239,68,68,.25)"}`}}>
                       {report.tradingStats.totalPnl>=0?"+":""}${report.tradingStats.totalPnl.toFixed(2)} REALIZED
@@ -657,9 +657,9 @@ export default function Skimmed() {
                       {val:`${report.tradingStats.avgHoldTime.toFixed(1)}h`, label:"Avg Hold"},
                       {val:`${report.tradingStats.winCount}/${report.tradingStats.lossCount}`, label:"W / L"},
                     ].map((s,i)=>(
-                      <div key={i} style={{padding:"16px 12px",borderRight:i<3?"1px solid var(--border)":"none",textAlign:"center"}}>
-                        <div style={{fontFamily:"var(--serif)",fontSize:"clamp(20px,4vw,28px)",fontWeight:300,color:s.color||"var(--text)",lineHeight:1,marginBottom:6}}>{s.val}</div>
-                        <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--muted)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{s.label}</div>
+                      <div key={i} style={{padding:"18px 10px",borderRight:i<3?"1px solid var(--border)":"none",textAlign:"center"}}>
+                        <div style={{fontFamily:"var(--serif)",fontSize:"clamp(22px,5vw,32px)",fontWeight:300,color:s.color||"var(--text)",lineHeight:1.05,marginBottom:8}}>{s.val}</div>
+                        <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{s.label}</div>
                       </div>
                     ))}
                   </div>
@@ -668,16 +668,16 @@ export default function Skimmed() {
                     <div style={{display:"grid",gridTemplateColumns:report.tradingStats.bestTrade&&report.tradingStats.worstTrade?"1fr 1fr":"1fr"}}>
                       {report.tradingStats.bestTrade && (
                         <div style={{padding:"14px 18px",borderRight:report.tradingStats.worstTrade?"1px solid var(--border)":"none"}}>
-                          <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--green-l)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>◢ Best Trade</div>
-                          <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:"var(--green-l)"}}>+${report.tradingStats.bestTrade.pnl.toFixed(2)}</div>
-                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",marginTop:3}}>+{report.tradingStats.bestTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.bestTrade.holdHours.toFixed(1)}h</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--green-l)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>◢ Best Trade</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:18,fontWeight:600,color:"var(--green-l)"}}>+${report.tradingStats.bestTrade.pnl.toFixed(2)}</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",marginTop:4}}>+{report.tradingStats.bestTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.bestTrade.holdHours.toFixed(1)}h</div>
                         </div>
                       )}
                       {report.tradingStats.worstTrade && (
                         <div style={{padding:"14px 18px"}}>
-                          <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--red)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>◤ Worst Trade</div>
-                          <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:"var(--red)"}}>${report.tradingStats.worstTrade.pnl.toFixed(2)}</div>
-                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",marginTop:3}}>{report.tradingStats.worstTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.worstTrade.holdHours.toFixed(1)}h</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--red)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>◤ Worst Trade</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:18,fontWeight:600,color:"var(--red)"}}>${report.tradingStats.worstTrade.pnl.toFixed(2)}</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",marginTop:4}}>{report.tradingStats.worstTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.worstTrade.holdHours.toFixed(1)}h</div>
                         </div>
                       )}
                     </div>
@@ -694,14 +694,14 @@ export default function Skimmed() {
                   </div>
                   {report.badHabits.map((h,i)=>(
                     <div key={i} style={{padding:"16px 18px",borderBottom:i<report.badHabits.length-1?"1px solid rgba(239,68,68,.1)":"none"}}>
-                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:8,flexWrap:"wrap"}}>
-                        <div style={{fontFamily:"var(--serif)",fontSize:18,fontStyle:"italic",color:"var(--text)",lineHeight:1.3}}>{h.title}</div>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:10,flexWrap:"wrap"}}>
+                        <div style={{fontFamily:"var(--serif)",fontSize:20,fontStyle:"italic",color:"var(--text)",lineHeight:1.3}}>{h.title}</div>
                         {h.cost!=null && h.cost > 0 && (
-                          <span style={{fontFamily:"var(--mono)",fontSize:14,fontWeight:600,color:"var(--red)",whiteSpace:"nowrap"}}>−${h.cost.toFixed(2)}</span>
+                          <span style={{fontFamily:"var(--mono)",fontSize:16,fontWeight:600,color:"var(--red)",whiteSpace:"nowrap"}}>−${h.cost.toFixed(2)}</span>
                         )}
                       </div>
-                      <div style={{fontFamily:"var(--mono)",fontSize:12,color:"#c8b89a",lineHeight:1.65,marginBottom:6}}>{h.detail}</div>
-                      <span style={{fontFamily:"var(--mono)",fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase",padding:"2px 8px",
+                      <div style={{fontFamily:"var(--mono)",fontSize:13,color:"#c8b89a",lineHeight:1.7,marginBottom:8}}>{h.detail}</div>
+                      <span style={{fontFamily:"var(--mono)",fontSize:10,letterSpacing:"0.1em",textTransform:"uppercase",padding:"3px 9px",
                         background:h.severity==="critical"?"rgba(239,68,68,.12)":"rgba(232,160,32,.1)",
                         border:h.severity==="critical"?"1px solid rgba(239,68,68,.3)":"1px solid rgba(232,160,32,.25)",
                         color:h.severity==="critical"?"var(--red)":"var(--gold)"}}>
