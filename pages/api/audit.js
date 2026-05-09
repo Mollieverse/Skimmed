@@ -1,4 +1,4 @@
-// pages/api/audit.js — Solana MEV audit pipeline with strict math sanity
+// pages/api/audit.js — Solana MEV audit with Jupiter Quote-based slippage detection
 export const maxDuration = 60;
 
 import { fetchWalletTransactions, fetchWalletBalances } from "../../lib/sim.js";
@@ -17,25 +17,7 @@ const PROGRAM_LABELS = {
   [ORCA]:    "Orca Whirlpool",
 };
 
-// ── Verified token whitelist — major Solana tokens only ──────────────────────
-// MEV detection runs ONLY on these. Filters out scam/spam/illiquid tokens
-// that produce nonsense slippage numbers (e.g., FLOKI showing $1B loss).
-const VERIFIED_TOKENS = new Set([
-  "So11111111111111111111111111111111111111112",   // SOL / WSOL
-  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
-  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  // USDT
-  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", // BONK
-  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  // JUP
-  "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",  // mSOL
-  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", // WIF
-  "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", // PYTH
-  "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", // ETH (wormhole)
-  "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E", // BTC (wormhole)
-  "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof",  // RENDER
-  "EzfgjvkSwthhgHaceR3LnKXUoRkP6NUhfghdaHaJ1mY",  // FIDA
-]);
-
-const MINT_SYMBOL = {
+const KNOWN_SYMBOLS = {
   "So11111111111111111111111111111111111111112":   "SOL",
   "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
   "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB":  "USDT",
@@ -47,11 +29,12 @@ const MINT_SYMBOL = {
 };
 
 // ── Math sanity caps ─────────────────────────────────────────────────────────
-const MAX_REASONABLE_SLIPPAGE = 25;   // anything above 25% = scam token / illiquid pool
-const MAX_REASONABLE_LOSS_USD = 5000; // single-attack loss cap; above = math error
-const MIN_DETECTABLE_SLIPPAGE = 1.2;  // below this is just normal DEX fees
+const MAX_REASONABLE_SLIPPAGE = 25;     // > 25% = math error or dead pool
+const MAX_REASONABLE_LOSS_USD = 5000;   // single-attack cap
+const MIN_DETECTABLE_SLIPPAGE = 1.2;    // below = normal DEX fees
+const MAX_SWAPS_TO_ANALYZE    = 30;     // cap Jupiter Quote calls for speed
 
-// ── Filter DEX swaps from SIM transactions ───────────────────────────────────
+// ── Filter DEX swaps from SIM ────────────────────────────────────────────────
 function filterSwaps(txs) {
   return txs.filter(tx => {
     const meta = tx.raw_transaction?.meta;
@@ -72,34 +55,59 @@ function parseSwap(tx) {
 
   const allMints = [...new Set([...pre.map(b => b.mint), ...post.map(b => b.mint)])];
 
-  // CRITICAL: use uiAmount (already decimal-adjusted), not raw amount
+  // Use uiAmount (already decimal-adjusted by SIM)
   const deltas = allMints.map(mint => {
     const preAmt  = Number(pre.find(b  => b.mint === mint)?.uiTokenAmount?.uiAmount  || 0);
     const postAmt = Number(post.find(b => b.mint === mint)?.uiTokenAmount?.uiAmount || 0);
-    return { mint, delta: postAmt - preAmt };
+    const decimals = pre.find(b => b.mint === mint)?.uiTokenAmount?.decimals
+                  || post.find(b => b.mint === mint)?.uiTokenAmount?.decimals
+                  || 6;
+    return { mint, delta: postAmt - preAmt, decimals };
   }).filter(d => Math.abs(d.delta) > 0.000001);
 
   const sold   = deltas.find(d => d.delta < 0);
   const bought = deltas.find(d => d.delta > 0);
   if (!sold || !bought) return null;
 
-  // ONLY analyze swaps between verified tokens — skip scam/illiquid pairs
-  if (!VERIFIED_TOKENS.has(sold.mint) || !VERIFIED_TOKENS.has(bought.mint)) {
-    return null;
-  }
-
   const accounts   = msg?.accountKeys || [];
   const dexProgram = accounts.find(a => DEX_SET.has(a));
 
   return {
-    inputMint:    sold.mint,
-    outputMint:   bought.mint,
-    inputAmount:  Math.abs(sold.delta),
-    outputAmount: bought.delta,
-    blockSlot:    tx.block_slot,
-    blockTime:    tx.block_time,
-    dexLabel:     PROGRAM_LABELS[dexProgram] || "DEX Swap",
+    inputMint:      sold.mint,
+    outputMint:     bought.mint,
+    inputAmount:    Math.abs(sold.delta),
+    outputAmount:   bought.delta,
+    inputDecimals:  sold.decimals,
+    outputDecimals: bought.decimals,
+    blockSlot:      tx.block_slot,
+    blockTime:      tx.block_time,
+    dexLabel:       PROGRAM_LABELS[dexProgram] || "DEX Swap",
   };
+}
+
+// ── Jupiter Quote — get fair expected output ─────────────────────────────────
+async function getJupiterQuote(inputMint, outputMint, inputAmount, inputDecimals) {
+  try {
+    // Convert ui amount → raw amount using actual decimals
+    const rawAmount = Math.round(inputAmount * Math.pow(10, inputDecimals));
+    if (rawAmount <= 0) return null;
+
+    const url = `https://quote-api.jup.ag/v6/quote?inputMint=${inputMint}&outputMint=${outputMint}&amount=${rawAmount}&slippageBps=50`;
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 4000);
+
+    const res = await fetch(url, { signal: ctrl.signal });
+    if (!res.ok) return null;
+    const data = await res.json();
+
+    if (!data.outAmount) return null;
+    return {
+      expectedOutputRaw: parseInt(data.outAmount),
+      priceImpactPct:    parseFloat(data.priceImpactPct || 0),
+    };
+  } catch {
+    return null;
+  }
 }
 
 function formatDate(blockTime) {
@@ -137,12 +145,8 @@ export default async function handler(req, res) {
     return res.status(400).json({ error:"Invalid Solana wallet address" });
   }
 
-  if (!process.env.DUNE_SIM_API_KEY) {
-    return res.status(500).json({ error:"DUNE_SIM_API_KEY not configured" });
-  }
-  if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error:"ANTHROPIC_API_KEY not configured" });
-  }
+  if (!process.env.DUNE_SIM_API_KEY)  return res.status(500).json({ error:"DUNE_SIM_API_KEY not configured" });
+  if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error:"ANTHROPIC_API_KEY not configured" });
 
   try {
     const [priceResult, tokenListResult, simResult, balancesResult] = await Promise.allSettled([
@@ -152,87 +156,111 @@ export default async function handler(req, res) {
       fetchWalletBalances(address),
     ]);
 
-    const priceMap  = priceResult.status  === "fulfilled" ? priceResult.value  : {};
+    const priceMap  = priceResult.status === "fulfilled" ? priceResult.value : {};
     const tokenList = tokenListResult.status === "fulfilled" ? tokenListResult.value : {};
 
     if (simResult.status === "rejected") {
-      console.error("[audit] SIM failed:", simResult.reason?.message);
       return res.status(502).json({ error: `Dune SIM: ${simResult.reason?.message}` });
     }
 
     const rawTxs = simResult.value?.transactions || [];
-    console.log(`[audit] ${rawTxs.length} transactions for ${address}`);
+    console.log(`[audit] ${rawTxs.length} txs for ${address}`);
 
     const swapTxs    = filterSwaps(rawTxs);
     const swapDeltas = swapTxs.map(parseSwap).filter(Boolean);
 
-    console.log(`[audit] ${swapDeltas.length} verified-token swaps after filtering`);
+    console.log(`[audit] ${swapDeltas.length} swaps to analyze`);
 
-    // ── MEV detection with sanity caps ─────────────────────────────────────────
+    // ── MEV detection — Jupiter Quote based, then fallback ────────────────────
     const attacks = [];
     let skippedInsane = 0;
+    let jupiterQuotes = 0;
+    let heuristicFallback = 0;
 
-    for (const swap of swapDeltas) {
-      const { inputMint, outputMint, inputAmount, outputAmount, blockSlot, blockTime, dexLabel } = swap;
+    // Cap analysis to recent swaps for Vercel timeout safety
+    const swapsToAnalyze = swapDeltas.slice(0, MAX_SWAPS_TO_ANALYZE);
+
+    for (const swap of swapsToAnalyze) {
+      const { inputMint, outputMint, inputAmount, outputAmount,
+              inputDecimals, outputDecimals, blockSlot, blockTime, dexLabel } = swap;
 
       if (inputAmount === 0) continue;
 
-      const expected    = inputAmount * 0.997; // 0.3% DEX fee
-      const slippagePct = Math.max(0, ((expected - outputAmount) / expected) * 100);
+      // Try Jupiter Quote API first — gold standard for fair price
+      let slippagePct, expectedOutput, detectionMethod;
+      const quote = await getJupiterQuote(inputMint, outputMint, inputAmount, inputDecimals);
 
-      // Skip below threshold
+      if (quote) {
+        // Convert raw expected → ui amount using actual output decimals
+        expectedOutput  = quote.expectedOutputRaw / Math.pow(10, outputDecimals);
+        const rawSlip   = ((expectedOutput - outputAmount) / expectedOutput) * 100;
+        // Subtract Jupiter's own price impact (legitimate, not MEV)
+        slippagePct     = Math.max(0, rawSlip - quote.priceImpactPct);
+        detectionMethod = "jupiter_quote";
+        jupiterQuotes++;
+      } else {
+        // Fallback: 0.997 heuristic if Jupiter has no quote
+        expectedOutput  = inputAmount * 0.997;
+        slippagePct     = Math.max(0, ((expectedOutput - outputAmount) / expectedOutput) * 100);
+        detectionMethod = "heuristic";
+        heuristicFallback++;
+      }
+
+      slippagePct = parseFloat(slippagePct.toFixed(4));
+
       if (slippagePct < MIN_DETECTABLE_SLIPPAGE) continue;
 
-      // SANITY CAP — anything above 25% slippage on verified tokens is impossible
-      // It's almost certainly a math error or pool data anomaly
+      // Sanity cap — > 25% slippage is impossible math, skip
       if (slippagePct > MAX_REASONABLE_SLIPPAGE) {
         skippedInsane++;
         continue;
       }
 
-      const lossInToken = Math.max(0, expected - outputAmount);
+      const lossInToken = Math.max(0, expectedOutput - outputAmount);
       const price       = Number(priceMap[outputMint]) || 0;
       const inputPrice  = Number(priceMap[inputMint])  || 0;
       let   lossUsd     = parseFloat((lossInToken * price).toFixed(2));
       const inputUsd    = parseFloat((inputAmount * inputPrice).toFixed(2));
 
-      // SANITY CAP — any single-attack loss above $5K is suspicious
-      // Cap it but flag for review rather than throwing it out entirely
+      // Cap loss at $5K — flags suspicious values
       let suspicious = false;
       if (lossUsd > MAX_REASONABLE_LOSS_USD) {
         suspicious = true;
-        lossUsd    = Math.min(lossUsd, MAX_REASONABLE_LOSS_USD);
+        lossUsd    = MAX_REASONABLE_LOSS_USD;
       }
 
-      const confidence  = slippagePct >= 3.5 ? "HIGH" : slippagePct >= 2.0 ? "MEDIUM" : "LOW";
-      const label       = confidence === "HIGH"   ? "High Confidence MEV Pattern"
-                        : confidence === "MEDIUM" ? "Likely MEV Exposure"
-                        : "Elevated Slippage — Possible MEV";
+      const confidence = slippagePct >= 3.5 ? "HIGH" : slippagePct >= 2.0 ? "MEDIUM" : "LOW";
+      const label      = confidence === "HIGH"   ? "High Confidence MEV Pattern"
+                       : confidence === "MEDIUM" ? "Likely MEV Exposure"
+                       : "Elevated Slippage — Possible MEV";
+
+      // Try to get token symbols from Jupiter token list, fallback to known
+      const inputSymbol  = KNOWN_SYMBOLS[inputMint]  || tokenList[inputMint]?.symbol  || inputMint.slice(0,4);
+      const outputSymbol = KNOWN_SYMBOLS[outputMint] || tokenList[outputMint]?.symbol || outputMint.slice(0,4);
 
       attacks.push({
         blockSlot, blockTime,
-        date:                formatDate(blockTime),
-        pair:                `${MINT_SYMBOL[inputMint] || inputMint.slice(0,4)} → ${MINT_SYMBOL[outputMint] || outputMint.slice(0,4)}`,
+        date:               formatDate(blockTime),
+        pair:               `${inputSymbol} → ${outputSymbol}`,
         dexLabel,
         label,
         confidence,
-        slippagePct:         parseFloat(slippagePct.toFixed(3)),
+        slippagePct,
         lossUsd,
         inputUsd,
-        lossInToken:         parseFloat(lossInToken.toFixed(6)),
-        inputAmount:         parseFloat(inputAmount.toFixed(4)),
-        severity:            getSeverity(slippagePct),
-        verified:            false,
-        verificationStatus:  suspicious ? "flagged_for_review" : "slippage_heuristic",
-        attacker:            null,
+        lossInToken:        parseFloat(lossInToken.toFixed(6)),
+        inputAmount:        parseFloat(inputAmount.toFixed(4)),
+        severity:           getSeverity(slippagePct),
+        detectionMethod,
+        verified:           false,
+        verificationStatus: suspicious ? "flagged_for_review" : detectionMethod,
+        attacker:           null,
       });
     }
 
-    if (skippedInsane > 0) {
-      console.log(`[audit] Filtered out ${skippedInsane} attacks with impossible slippage (>${MAX_REASONABLE_SLIPPAGE}%)`);
-    }
+    console.log(`[audit] ${jupiterQuotes} Jupiter quotes, ${heuristicFallback} heuristic fallback, ${skippedInsane} filtered as anomalies`);
 
-    // ── Summary ────────────────────────────────────────────────────────────────
+    // ── Summary — always builds, even with 0 attacks ─────────────────────────
     const totalSwaps    = swapDeltas.length;
     const cleanSwaps    = totalSwaps - attacks.length;
     const totalLossUsd  = parseFloat(attacks.reduce((s,a) => s + a.lossUsd, 0).toFixed(2));
@@ -244,7 +272,6 @@ export default async function handler(req, res) {
     const worstHit      = attacks.reduce((m,a) => (!m || a.lossUsd > m.lossUsd ? a : m), null);
     const timeline      = buildTimeline(attacks);
 
-    // Bot leaderboard — placeholder clusters since Helius is skipped for speed
     const botMap = {};
     attacks.forEach(a => {
       const key = `cluster_${a.blockSlot % 3}`;
@@ -271,7 +298,7 @@ export default async function handler(req, res) {
       attacks,
     };
 
-    // ── Portfolio with proper decimal handling ────────────────────────────────
+    // ── Portfolio — always builds ─────────────────────────────────────────────
     let portfolio = [], portfolioTotal = 0;
     if (balancesResult.status === "fulfilled" && balancesResult.value?.balances) {
       portfolio = balancesResult.value.balances
@@ -279,28 +306,24 @@ export default async function handler(req, res) {
           const mint = b.address || b.mint || b.token_address || null;
           if (!mint) return null;
 
-          // Trust SIM's ui_amount (decimal-adjusted) — if missing, divide raw by decimals
           let amount = 0;
-          if (b.ui_amount != null) amount = Number(b.ui_amount);
-          else if (b.uiAmount != null) amount = Number(b.uiAmount);
+          if (b.ui_amount != null)        amount = Number(b.ui_amount);
+          else if (b.uiAmount != null)    amount = Number(b.uiAmount);
           else if (b.amount != null && b.decimals != null) amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
-          else if (b.amount != null) amount = Number(b.amount);
+          else if (b.amount != null)      amount = Number(b.amount);
 
           if (!isFinite(amount) || amount <= 0) return null;
 
           const meta   = tokenList[mint] || {};
           const price  = Number(priceMap[mint] || b.price_usd || b.price || 0);
-          const symbol = meta.symbol || b.symbol || mint.slice(0,4);
-          const name   = meta.name   || b.name   || symbol;
+          const symbol = KNOWN_SYMBOLS[mint] || meta.symbol || b.symbol || mint.slice(0,4);
+          const name   = meta.name || b.name || symbol;
           const valueUsd = parseFloat((amount * price).toFixed(2));
 
-          // Skip absurd valuations — likely scam/spam tokens
-          if (valueUsd > 10_000_000) return null; // >$10M single token = suspicious
+          if (valueUsd > 10_000_000) return null;
 
           return {
-            mint,
-            symbol,
-            name,
+            mint, symbol, name,
             logoURI:  meta.logoURI || b.logo || b.icon || null,
             amount:   parseFloat(amount.toFixed(6)),
             display:  formatBalance(amount) || String(amount),
@@ -326,7 +349,9 @@ export default async function handler(req, res) {
       status:             200,
       transactions_count: rawTxs.length,
       swaps_detected:     swapTxs.length,
-      verified_swaps:     swapDeltas.length,
+      swaps_analyzed:     swapsToAnalyze.length,
+      jupiter_verified:   jupiterQuotes,
+      heuristic_fallback: heuristicFallback,
       mev_flagged:        attacks.length,
       filtered_anomalies: skippedInsane,
       transactions:       rawTxs.slice(0, 10),
