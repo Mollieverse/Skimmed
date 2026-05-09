@@ -125,29 +125,30 @@ function BarChart({ data }) {
 }
 
 // ── Portfolio ─────────────────────────────────────────────────────────────────
-function Portfolio({ portfolio, total }) {
+function Portfolio({ portfolio, total, otherCount }) {
   const [imgErrors, setImgErrors] = useState({});
+
   if (!portfolio?.length) return (
     <div style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2,padding:"24px 18px",textAlign:"center"}}>
       <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:8}}>Portfolio Snapshot</div>
-      <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)"}}>No token balances found for this wallet</div>
+      <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)"}}>{otherCount > 0 ? `${otherCount} unpriced token${otherCount !== 1 ? "s" : ""} held — no major holdings` : "No token balances found for this wallet"}</div>
     </div>
   );
   return (
     <div style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
       <div style={{padding:"12px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
         <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Portfolio Snapshot</span>
-        <span style={{fontFamily:"var(--mono)",fontSize:15,color:"var(--gold)",fontWeight:600}}>${total?.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
+        <span style={{fontFamily:"var(--mono)",fontSize:15,color:"var(--gold)",fontWeight:600}}>${(total||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}</span>
       </div>
-      {portfolio.filter(Boolean).map((t,i)=>{
-        const symbol=t?.symbol||"TOKEN";
-        const name=t?.name||"Unknown";
-        const display=t?.display??"0";
-        const price=Number(t?.price)||0;
-        const value=t?.valueUsd != null ? Number(t.valueUsd) : null;
-        const mint=t?.mint||`unk-${i}`;
-        const logo=t?.logoURI;
-        return (
+      {portfolio.map((t,i)=>{
+            const symbol=t?.symbol||"TOKEN";
+            const name=t?.name||"Unknown";
+            const display=t?.display??"0";
+            const price=Number(t?.price)||0;
+            const value=t?.valueUsd != null ? Number(t.valueUsd) : null;
+            const mint=t?.mint||`unk-${i}`;
+            const logo=t?.logoURI;
+            return (
           <div key={mint+i} style={{display:"flex",alignItems:"center",padding:"14px 18px",borderBottom:i<portfolio.length-1?"1px solid #0d0b09":"none",gap:14}}>
             <div style={{width:44,height:44,borderRadius:"50%",overflow:"hidden",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",
               background:logo&&!imgErrors[mint]?"#1a1a1a":"linear-gradient(135deg,#3a2a05,#1a1200)",
@@ -168,24 +169,22 @@ function Portfolio({ portfolio, total }) {
             <div style={{textAlign:"right",minWidth:80}}>
               <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)"}}>{display}</div>
               <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>
-                {price > 0 ? `@ $${price >= 1 ? price.toFixed(2) : price.toFixed(6)}` : "@ —"}
+                @ ${price >= 1 ? price.toFixed(2) : price.toFixed(6)}
               </div>
             </div>
             <div style={{textAlign:"right",minWidth:80}}>
-              {t?.valueUsd != null ? (
-                <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:t.valueUsd>100?"var(--gold)":"var(--text)"}}>
-                  ${t.valueUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
-                </div>
-              ) : (
-                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
-                  <div style={{fontFamily:"var(--mono)",fontSize:18,color:"var(--muted)",lineHeight:1}}>—</div>
-                  <div style={{fontFamily:"var(--mono)",fontSize:9,color:"var(--muted)",letterSpacing:"0.05em",opacity:0.7}}>unverified</div>
-                </div>
-              )}
+              <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:value>100?"var(--gold)":"var(--text)"}}>
+                ${(value||0).toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+              </div>
             </div>
           </div>
         );
       })}
+      {otherCount > 0 && (
+        <div style={{padding:"12px 18px",borderTop:"1px solid var(--b2)",textAlign:"center",fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",letterSpacing:"0.05em",fontStyle:"italic"}}>
+          + {otherCount} other token{otherCount !== 1 ? "s" : ""} held (unpriced — likely memecoins or illiquid)
+        </div>
+      )}
     </div>
   );
 }
@@ -267,18 +266,18 @@ async function generateShareCard(report) {
   const totalDamage = mevLoss + tradingLoss;
   const worstHabit  = habits[0] || null;
 
-  // Decide headline framing
+  // Decide headline framing — Option A: always lead with trading loss / behavior, never MEV
   let headline, headlineLabel;
-  if (totalDamage > 0) {
-    headline      = `-$${totalDamage.toFixed(2)}`;
-    headlineLabel = mevLoss > tradingLoss
-      ? "ESTIMATED MEV EXTRACTION"
-      : tradingLoss > 0
-        ? "TOTAL TRADING DAMAGE"
-        : "ESTIMATED LOSSES";
+  if (tradingLoss > 0) {
+    headline      = `-$${tradingLoss.toFixed(2)}`;
+    headlineLabel = "REALIZED TRADING LOSSES";
   } else if (worstHabit) {
     headline      = worstHabit.title.length > 28 ? worstHabit.title.slice(0,28)+"…" : worstHabit.title;
     headlineLabel = "BEHAVIORAL PATTERN DETECTED";
+  } else if (mevLoss > 0) {
+    // Only show MEV if there's nothing else to show
+    headline      = `-$${mevLoss.toFixed(2)}`;
+    headlineLabel = "MEV-RELATED EXECUTION SLIPPAGE";
   } else {
     headline      = "CLEAN";
     headlineLabel = "NO DAMAGE DETECTED";
@@ -324,7 +323,7 @@ async function generateShareCard(report) {
 
   ctx.fillStyle = "#a89e8c";
   ctx.font = "400 18px 'Courier New', monospace";
-  ctx.fillText("TRADING AUTOPSY · SOLANA WALLET ANALYSIS", 195, 158);
+  ctx.fillText("WHY YOU'RE LOSING ON SOLANA · WALLET AUTOPSY", 195, 158);
 
   // Divider
   ctx.fillStyle = "#1e1a15";
@@ -743,7 +742,7 @@ export default function Skimmed() {
                 </div>
               )}
 
-              <div className="au au2"><Portfolio portfolio={report.portfolio} total={report.portfolioTotal}/></div>
+              <div className="au au2"><Portfolio portfolio={report.portfolio} total={report.portfolioTotal} otherCount={report.otherTokensCount}/></div>
 
               {S.attackCount > 0 && <div className="au au3" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                 <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
@@ -862,3 +861,4 @@ export default function Skimmed() {
     </>
   );
 }
+
