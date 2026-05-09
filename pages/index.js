@@ -204,13 +204,14 @@ function DevPanel({ simRaw }) {
         <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>{open?"[ collapse ]":"[ expand ]"}</span>
       </div>
       {open&&(<>
-        <div style={{padding:"9px 16px",background:"#080604",borderBottom:"1px solid var(--b2)",fontFamily:"var(--mono)",fontSize:11}}>
-          <span style={{color:"var(--gold)"}}>GET</span>
-          <span style={{color:"var(--muted)",margin:"0 5px"}}>→</span>
-          <span style={{color:"var(--blue-l)"}}>{simRaw?.endpoint}</span>
-          <span style={{float:"right",color:"#4ade80"}}>200 OK</span>
+        <div style={{padding:"9px 16px",background:"#080604",borderBottom:"1px solid var(--b2)",fontFamily:"var(--mono)",fontSize:11,display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start",flexWrap:"wrap"}}>
+          <div style={{flex:1,minWidth:0,wordBreak:"break-all"}}>
+            <span style={{color:"var(--gold)"}}>GET</span>{" "}
+            <span style={{color:"var(--blue-l)"}}>{simRaw?.endpoint}</span>
+          </div>
+          <span style={{color:"#4ade80",flexShrink:0}}>200 OK</span>
         </div>
-        <div style={{padding:"12px 14px",background:"#050402",maxHeight:320,overflowY:"auto",fontFamily:"var(--mono)",fontSize:11,lineHeight:1.75}}>
+        <div style={{padding:"12px 14px",background:"#050402",maxHeight:320,overflow:"auto",fontFamily:"var(--mono)",fontSize:11,lineHeight:1.75,whiteSpace:"pre",wordBreak:"break-all"}}>
           {json.split("\n").map((line,i)=>(
             <div key={i} style={{background:isMev(line)?"rgba(239,68,68,.05)":"transparent",
               borderLeft:isMev(line)?"2px solid rgba(239,68,68,.3)":"2px solid transparent",paddingLeft:5}}
@@ -360,7 +361,7 @@ function LoadingScreen({ wallet }) {
           <div style={{width:5,height:5,borderRadius:"50%",background:"var(--blue-l)",animation:"pulse 1s ease-in-out infinite"}}/>
           <span style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--blue-l)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Dune SIM · Live Call</span>
         </div>
-        <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",wordBreak:"break-all"}}>
+        <div style={{fontFamily:"var(--mono)",fontSize:12,color:"var(--muted)",wordBreak:"break-all",overflow:"hidden"}}>
           <span style={{color:"var(--gold)"}}>GET</span> https://api.sim.dune.com/beta/svm/transactions/{wallet.slice(0,8)}…
         </div>
       </div>
@@ -443,7 +444,7 @@ export default function Skimmed() {
         <link rel="icon" href="/skimmed-logo.png"/>
       </Head>
 
-      <div style={{minHeight:"100vh",background:"var(--bg)",position:"relative",zIndex:1}}>
+      <div style={{minHeight:"100vh",background:"var(--bg)",position:"relative",zIndex:1,width:"100%",maxWidth:"100vw",overflowX:"hidden"}}>
         <Ticker/>
 
         <header style={{borderBottom:"1px solid var(--border)",padding:"0 clamp(16px,4vw,48px)",
@@ -463,19 +464,19 @@ export default function Skimmed() {
           </div>
         </header>
 
-        <section style={{padding:"64px clamp(16px,4vw,48px) 48px",maxWidth:820,margin:"0 auto"}}>
+        <section style={{padding:"64px clamp(16px,4vw,48px) 48px",maxWidth:820,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
           <div style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.16em",color:"var(--muted)",textTransform:"uppercase",marginBottom:14}}>
             Forensic MEV Intelligence · Solana Mainnet
           </div>
           <h1 style={{fontFamily:"var(--serif)",fontSize:"clamp(40px,8vw,68px)",fontWeight:300,lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:18}}>
-            How much have<br/>
-            <em style={{fontStyle:"italic",color:"var(--gold)"}}>bots extracted</em><br/>
-            from you?
+            How much value gets<br/>
+            <em style={{fontStyle:"italic",color:"var(--gold)"}}>skimmed</em>{" "}from your wallet —<br/>
+            by bots, and by yourself?
           </h1>
-          <p style={{fontSize:17,color:"var(--text)",fontWeight:300,maxWidth:520,lineHeight:1.75,marginBottom:36,opacity:0.85}}>
-            Paste your Solana wallet. We pull your swap history via{" "}
-            <span style={{fontFamily:"var(--mono)",fontSize:14,color:"var(--blue-l)"}}>Dune SIM</span>,
-            detect MEV patterns, calculate losses using live prices, and generate a forensic report narrated by Claude AI.
+          <p style={{fontSize:17,color:"var(--text)",fontWeight:300,maxWidth:540,lineHeight:1.75,marginBottom:36,opacity:0.9}}>
+            Forensic audit of your Solana trading damage.{" "}
+            <span style={{fontFamily:"var(--mono)",fontSize:14,color:"var(--blue-l)"}}>Dune SIM</span>{" "}
+            pulls your swap history. We detect MEV patterns, calculate PNL, expose bad habits, and Claude AI delivers the autopsy.
           </p>
 
           <div style={{border:"1px solid var(--border)",display:"flex",marginBottom:12}}>
@@ -531,14 +532,14 @@ export default function Skimmed() {
         {loading&&<div style={{maxWidth:820,margin:"0 auto",padding:"0 clamp(16px,4vw,48px)"}}><LoadingScreen wallet={wallet}/></div>}
 
         {report&&!loading&&(
-          <section ref={reportRef} style={{maxWidth:820,margin:"0 auto",padding:"0 clamp(16px,4vw,48px) 80px"}}>
+          <section ref={reportRef} style={{maxWidth:820,margin:"0 auto",padding:"0 clamp(16px,4vw,48px) 80px",width:"100%",boxSizing:"border-box"}}>
 
             <div className="au" style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",marginBottom:6,paddingBottom:18,borderBottom:"1px solid var(--border)",gap:12,flexWrap:"wrap"}}>
               <div>
                 <div style={{fontFamily:"var(--mono)",fontSize:11,letterSpacing:"0.12em",color:"var(--muted)",textTransform:"uppercase",marginBottom:5}}>
                   Intelligence Report · {new Date(report.generatedAt).toUTCString()}
                 </div>
-                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)",wordBreak:"break-all",opacity:0.7}}>{report.wallet}</div>
+                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)",wordBreak:"break-all",opacity:0.7,maxWidth:"100%"}}>{report.wallet}</div>
               </div>
               <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
                 <button onClick={copyLink} style={outBtn}>{copied?"✓ Copied":"Copy Link"}</button>
@@ -591,6 +592,79 @@ export default function Skimmed() {
                 </div>
                 <div style={{padding:"22px 22px",fontFamily:"var(--serif)",fontSize:18,fontStyle:"italic",lineHeight:1.85,color:"#c8b89a"}}>{report.briefing}</div>
               </div>
+
+              {/* Trading Stats */}
+              {report.tradingStats?.totalTrades > 0 && (
+                <div className="au au2" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
+                  <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Trading Performance</span>
+                    <span style={{fontFamily:"var(--mono)",fontSize:11,color:report.tradingStats.totalPnl>=0?"var(--green-l)":"var(--red)",padding:"3px 9px",
+                      background:report.tradingStats.totalPnl>=0?"rgba(74,222,128,.08)":"rgba(239,68,68,.08)",
+                      border:`1px solid ${report.tradingStats.totalPnl>=0?"rgba(74,222,128,.25)":"rgba(239,68,68,.25)"}`}}>
+                      {report.tradingStats.totalPnl>=0?"+":""}${report.tradingStats.totalPnl.toFixed(2)} REALIZED
+                    </span>
+                  </div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr 1fr",borderBottom:"1px solid var(--b2)"}}>
+                    {[
+                      {val:report.tradingStats.totalTrades, label:"Closed Trades"},
+                      {val:`${report.tradingStats.winRate}%`, label:"Win Rate", color:report.tradingStats.winRate>=50?"var(--green-l)":"var(--red)"},
+                      {val:`${report.tradingStats.avgHoldTime.toFixed(1)}h`, label:"Avg Hold"},
+                      {val:`${report.tradingStats.winCount}/${report.tradingStats.lossCount}`, label:"W / L"},
+                    ].map((s,i)=>(
+                      <div key={i} style={{padding:"16px 12px",borderRight:i<3?"1px solid var(--border)":"none",textAlign:"center"}}>
+                        <div style={{fontFamily:"var(--serif)",fontSize:"clamp(20px,4vw,28px)",fontWeight:300,color:s.color||"var(--text)",lineHeight:1,marginBottom:6}}>{s.val}</div>
+                        <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--muted)",letterSpacing:"0.08em",textTransform:"uppercase"}}>{s.label}</div>
+                      </div>
+                    ))}
+                  </div>
+                  {/* Best/Worst trades inline */}
+                  {(report.tradingStats.bestTrade || report.tradingStats.worstTrade) && (
+                    <div style={{display:"grid",gridTemplateColumns:report.tradingStats.bestTrade&&report.tradingStats.worstTrade?"1fr 1fr":"1fr"}}>
+                      {report.tradingStats.bestTrade && (
+                        <div style={{padding:"14px 18px",borderRight:report.tradingStats.worstTrade?"1px solid var(--border)":"none"}}>
+                          <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--green-l)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>◢ Best Trade</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:"var(--green-l)"}}>+${report.tradingStats.bestTrade.pnl.toFixed(2)}</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",marginTop:3}}>+{report.tradingStats.bestTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.bestTrade.holdHours.toFixed(1)}h</div>
+                        </div>
+                      )}
+                      {report.tradingStats.worstTrade && (
+                        <div style={{padding:"14px 18px"}}>
+                          <div style={{fontFamily:"var(--mono)",fontSize:10,color:"var(--red)",letterSpacing:"0.1em",textTransform:"uppercase",marginBottom:6}}>◤ Worst Trade</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:"var(--red)"}}>${report.tradingStats.worstTrade.pnl.toFixed(2)}</div>
+                          <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",marginTop:3}}>{report.tradingStats.worstTrade.pnlPct.toFixed(0)}% · held {report.tradingStats.worstTrade.holdHours.toFixed(1)}h</div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Bad Habits */}
+              {report.badHabits?.length > 0 && (
+                <div className="au au2" style={{border:"1px solid rgba(239,68,68,.25)",borderTop:"none",marginBottom:2,background:"rgba(239,68,68,.03)"}}>
+                  <div style={{padding:"11px 18px",background:"rgba(239,68,68,.05)",borderBottom:"1px solid rgba(239,68,68,.2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                    <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--red)",textTransform:"uppercase"}}>⚠ Bad Habits Detected</span>
+                    <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--red)"}}>{report.badHabits.length} pattern{report.badHabits.length!==1?"s":""}</span>
+                  </div>
+                  {report.badHabits.map((h,i)=>(
+                    <div key={i} style={{padding:"16px 18px",borderBottom:i<report.badHabits.length-1?"1px solid rgba(239,68,68,.1)":"none"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:12,marginBottom:8,flexWrap:"wrap"}}>
+                        <div style={{fontFamily:"var(--serif)",fontSize:18,fontStyle:"italic",color:"var(--text)",lineHeight:1.3}}>{h.title}</div>
+                        {h.cost!=null && h.cost > 0 && (
+                          <span style={{fontFamily:"var(--mono)",fontSize:14,fontWeight:600,color:"var(--red)",whiteSpace:"nowrap"}}>−${h.cost.toFixed(2)}</span>
+                        )}
+                      </div>
+                      <div style={{fontFamily:"var(--mono)",fontSize:12,color:"#c8b89a",lineHeight:1.65,marginBottom:6}}>{h.detail}</div>
+                      <span style={{fontFamily:"var(--mono)",fontSize:9,letterSpacing:"0.1em",textTransform:"uppercase",padding:"2px 8px",
+                        background:h.severity==="critical"?"rgba(239,68,68,.12)":"rgba(232,160,32,.1)",
+                        border:h.severity==="critical"?"1px solid rgba(239,68,68,.3)":"1px solid rgba(232,160,32,.25)",
+                        color:h.severity==="critical"?"var(--red)":"var(--gold)"}}>
+                        {h.severity}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
 
               {S.timeline?.length>0&&(
                 <div className="au au2" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
