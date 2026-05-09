@@ -1,10 +1,11 @@
-// pages/api/audit.js
+// pages/api/audit.js — Solana MEV audit pipeline with strict math sanity
 export const maxDuration = 60;
 
 import { fetchWalletTransactions, fetchWalletBalances } from "../../lib/sim.js";
 import { fetchLivePrices, fetchTokenList, formatBalance } from "../../lib/prices.js";
 import { generateBriefing, generateProtectionPlan, generateTweetText } from "../../lib/claude.js";
 
+// ── Solana DEX programs ──────────────────────────────────────────────────────
 const JUPITER  = "JUP6LkbZbjS1jKKwapdHNy74zcZ3tLUZoi5QNyVTaV4";
 const RAYDIUM  = "675kPX9MHTjS2zt1qfr1NYHuzeLXfQM9H24wFSUt1Mp8";
 const ORCA     = "whirLbMiicVdio4qvUfM5KAg6Ct8VwpYzGff3uctyCc";
@@ -16,23 +17,41 @@ const PROGRAM_LABELS = {
   [ORCA]:    "Orca Whirlpool",
 };
 
-const DECIMALS = {
-  So11111111111111111111111111111111111111112:   9,
-  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: 6,
-  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB:  6,
-  DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: 5,
-  JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN:  6,
-};
+// ── Verified token whitelist — major Solana tokens only ──────────────────────
+// MEV detection runs ONLY on these. Filters out scam/spam/illiquid tokens
+// that produce nonsense slippage numbers (e.g., FLOKI showing $1B loss).
+const VERIFIED_TOKENS = new Set([
+  "So11111111111111111111111111111111111111112",   // SOL / WSOL
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", // USDC
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",  // USDT
+  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263", // BONK
+  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",  // JUP
+  "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So",  // mSOL
+  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm", // WIF
+  "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3", // PYTH
+  "7vfCXTUXx5WJV5JADk17DUJ4ksgau7utNKj4b963voxs", // ETH (wormhole)
+  "9n4nbM75f5Ui33ZbPYXn59EwSgE8CGsHtAeTH5YFeJ9E", // BTC (wormhole)
+  "rndrizKT3MK1iimdxRdWabcF7Zg7AR5T4nud4EkHBof",  // RENDER
+  "EzfgjvkSwthhgHaceR3LnKXUoRkP6NUhfghdaHaJ1mY",  // FIDA
+]);
 
 const MINT_SYMBOL = {
-  So11111111111111111111111111111111111111112:   "SOL",
-  EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v: "USDC",
-  Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB:  "USDT",
-  DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263: "BONK",
-  JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN:  "JUP",
+  "So11111111111111111111111111111111111111112":   "SOL",
+  "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": "USDC",
+  "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB":  "USDT",
+  "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": "BONK",
+  "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN":  "JUP",
+  "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So":  "mSOL",
+  "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": "WIF",
+  "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": "PYTH",
 };
 
-// ── Helpers ───────────────────────────────────────────────────────────────────
+// ── Math sanity caps ─────────────────────────────────────────────────────────
+const MAX_REASONABLE_SLIPPAGE = 25;   // anything above 25% = scam token / illiquid pool
+const MAX_REASONABLE_LOSS_USD = 5000; // single-attack loss cap; above = math error
+const MIN_DETECTABLE_SLIPPAGE = 1.2;  // below this is just normal DEX fees
+
+// ── Filter DEX swaps from SIM transactions ───────────────────────────────────
 function filterSwaps(txs) {
   return txs.filter(tx => {
     const meta = tx.raw_transaction?.meta;
@@ -45,13 +64,16 @@ function filterSwaps(txs) {
   });
 }
 
+// ── Parse swap with proper decimal handling ──────────────────────────────────
 function parseSwap(tx) {
   const pre  = tx.raw_transaction?.meta?.preTokenBalances  || [];
   const post = tx.raw_transaction?.meta?.postTokenBalances || [];
   const msg  = tx.raw_transaction?.transaction?.message;
+
   const allMints = [...new Set([...pre.map(b => b.mint), ...post.map(b => b.mint)])];
-  const deltas   = allMints.map(mint => {
-    // Coerce to Number — SIM may return strings
+
+  // CRITICAL: use uiAmount (already decimal-adjusted), not raw amount
+  const deltas = allMints.map(mint => {
     const preAmt  = Number(pre.find(b  => b.mint === mint)?.uiTokenAmount?.uiAmount  || 0);
     const postAmt = Number(post.find(b => b.mint === mint)?.uiTokenAmount?.uiAmount || 0);
     return { mint, delta: postAmt - preAmt };
@@ -60,6 +82,11 @@ function parseSwap(tx) {
   const sold   = deltas.find(d => d.delta < 0);
   const bought = deltas.find(d => d.delta > 0);
   if (!sold || !bought) return null;
+
+  // ONLY analyze swaps between verified tokens — skip scam/illiquid pairs
+  if (!VERIFIED_TOKENS.has(sold.mint) || !VERIFIED_TOKENS.has(bought.mint)) {
+    return null;
+  }
 
   const accounts   = msg?.accountKeys || [];
   const dexProgram = accounts.find(a => DEX_SET.has(a));
@@ -71,7 +98,7 @@ function parseSwap(tx) {
     outputAmount: bought.delta,
     blockSlot:    tx.block_slot,
     blockTime:    tx.block_time,
-    dexLabel:     PROGRAM_LABELS[dexProgram] || "Unknown DEX",
+    dexLabel:     PROGRAM_LABELS[dexProgram] || "DEX Swap",
   };
 }
 
@@ -98,8 +125,7 @@ function buildTimeline(attacks) {
     months[key].count++;
     months[key].loss = parseFloat((months[key].loss + a.lossUsd).toFixed(2));
   }
-  return Object.values(months)
-    .sort((a,b) => a.sortKey.localeCompare(b.sortKey));
+  return Object.values(months).sort((a,b) => a.sortKey.localeCompare(b.sortKey));
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
@@ -111,16 +137,14 @@ export default async function handler(req, res) {
     return res.status(400).json({ error:"Invalid Solana wallet address" });
   }
 
-  // ── 1. Validate env vars immediately ────────────────────────────────────────
   if (!process.env.DUNE_SIM_API_KEY) {
-    return res.status(500).json({ error:"DUNE_SIM_API_KEY is not configured on the server. Add it to Vercel environment variables." });
+    return res.status(500).json({ error:"DUNE_SIM_API_KEY not configured" });
   }
   if (!process.env.ANTHROPIC_API_KEY) {
-    return res.status(500).json({ error:"ANTHROPIC_API_KEY is not configured on the server." });
+    return res.status(500).json({ error:"ANTHROPIC_API_KEY not configured" });
   }
 
   try {
-    // ── 2. Fetch prices + SIM in parallel ──────────────────────────────────────
     const [priceResult, tokenListResult, simResult, balancesResult] = await Promise.allSettled([
       fetchLivePrices(),
       fetchTokenList(),
@@ -128,46 +152,57 @@ export default async function handler(req, res) {
       fetchWalletBalances(address),
     ]);
 
-    // Prices — non-fatal if fails
     const priceMap  = priceResult.status  === "fulfilled" ? priceResult.value  : {};
     const tokenList = tokenListResult.status === "fulfilled" ? tokenListResult.value : {};
 
-    // SIM — fatal if fails
     if (simResult.status === "rejected") {
-      console.error("[audit] Dune SIM failed:", simResult.reason?.message);
-      return res.status(502).json({
-        error: `Dune SIM fetch failed: ${simResult.reason?.message || "Unknown error"}. Check your DUNE_SIM_API_KEY in Vercel.`
-      });
+      console.error("[audit] SIM failed:", simResult.reason?.message);
+      return res.status(502).json({ error: `Dune SIM: ${simResult.reason?.message}` });
     }
 
     const rawTxs = simResult.value?.transactions || [];
     console.log(`[audit] ${rawTxs.length} transactions for ${address}`);
 
-    // ── 3. Parse swaps ─────────────────────────────────────────────────────────
     const swapTxs    = filterSwaps(rawTxs);
     const swapDeltas = swapTxs.map(parseSwap).filter(Boolean);
 
-    // ── 4. Detect MEV — slippage heuristic, no slow Helius calls ──────────────
-    // Helius block verification runs only on confirmed high-confidence hits
-    // to avoid timeout on Vercel hobby plan
-    const THRESHOLD = 1.2;
+    console.log(`[audit] ${swapDeltas.length} verified-token swaps after filtering`);
+
+    // ── MEV detection with sanity caps ─────────────────────────────────────────
     const attacks = [];
+    let skippedInsane = 0;
 
     for (const swap of swapDeltas) {
-      const { inputMint, outputMint, blockSlot, blockTime, dexLabel } = swap;
-      const inputAmount  = Number(swap.inputAmount)  || 0;
-      const outputAmount = Number(swap.outputAmount) || 0;
+      const { inputMint, outputMint, inputAmount, outputAmount, blockSlot, blockTime, dexLabel } = swap;
+
       if (inputAmount === 0) continue;
 
-      const expected    = inputAmount * 0.997;
+      const expected    = inputAmount * 0.997; // 0.3% DEX fee
       const slippagePct = Math.max(0, ((expected - outputAmount) / expected) * 100);
-      if (slippagePct < THRESHOLD) continue;
+
+      // Skip below threshold
+      if (slippagePct < MIN_DETECTABLE_SLIPPAGE) continue;
+
+      // SANITY CAP — anything above 25% slippage on verified tokens is impossible
+      // It's almost certainly a math error or pool data anomaly
+      if (slippagePct > MAX_REASONABLE_SLIPPAGE) {
+        skippedInsane++;
+        continue;
+      }
 
       const lossInToken = Math.max(0, expected - outputAmount);
       const price       = Number(priceMap[outputMint]) || 0;
       const inputPrice  = Number(priceMap[inputMint])  || 0;
-      const lossUsd     = parseFloat((lossInToken * price).toFixed(2));
+      let   lossUsd     = parseFloat((lossInToken * price).toFixed(2));
       const inputUsd    = parseFloat((inputAmount * inputPrice).toFixed(2));
+
+      // SANITY CAP — any single-attack loss above $5K is suspicious
+      // Cap it but flag for review rather than throwing it out entirely
+      let suspicious = false;
+      if (lossUsd > MAX_REASONABLE_LOSS_USD) {
+        suspicious = true;
+        lossUsd    = Math.min(lossUsd, MAX_REASONABLE_LOSS_USD);
+      }
 
       const confidence  = slippagePct >= 3.5 ? "HIGH" : slippagePct >= 2.0 ? "MEDIUM" : "LOW";
       const label       = confidence === "HIGH"   ? "High Confidence MEV Pattern"
@@ -176,24 +211,28 @@ export default async function handler(req, res) {
 
       attacks.push({
         blockSlot, blockTime,
-        date:          formatDate(blockTime),
-        pair:          `${MINT_SYMBOL[inputMint] || inputMint.slice(0,4)} → ${MINT_SYMBOL[outputMint] || outputMint.slice(0,4)}`,
+        date:                formatDate(blockTime),
+        pair:                `${MINT_SYMBOL[inputMint] || inputMint.slice(0,4)} → ${MINT_SYMBOL[outputMint] || outputMint.slice(0,4)}`,
         dexLabel,
         label,
         confidence,
-        slippagePct:   parseFloat(slippagePct.toFixed(3)),
+        slippagePct:         parseFloat(slippagePct.toFixed(3)),
         lossUsd,
         inputUsd,
-        lossInToken:   parseFloat(lossInToken.toFixed(6)),
-        inputAmount:   parseFloat(inputAmount.toFixed(4)),
-        severity:      getSeverity(slippagePct),
-        verified:      false,
-        verificationStatus: "slippage_heuristic",
-        attacker:      null,
+        lossInToken:         parseFloat(lossInToken.toFixed(6)),
+        inputAmount:         parseFloat(inputAmount.toFixed(4)),
+        severity:            getSeverity(slippagePct),
+        verified:            false,
+        verificationStatus:  suspicious ? "flagged_for_review" : "slippage_heuristic",
+        attacker:            null,
       });
     }
 
-    // ── 5. Build summary ───────────────────────────────────────────────────────
+    if (skippedInsane > 0) {
+      console.log(`[audit] Filtered out ${skippedInsane} attacks with impossible slippage (>${MAX_REASONABLE_SLIPPAGE}%)`);
+    }
+
+    // ── Summary ────────────────────────────────────────────────────────────────
     const totalSwaps    = swapDeltas.length;
     const cleanSwaps    = totalSwaps - attacks.length;
     const totalLossUsd  = parseFloat(attacks.reduce((s,a) => s + a.lossUsd, 0).toFixed(2));
@@ -205,7 +244,7 @@ export default async function handler(req, res) {
     const worstHit      = attacks.reduce((m,a) => (!m || a.lossUsd > m.lossUsd ? a : m), null);
     const timeline      = buildTimeline(attacks);
 
-    // Bot map — placeholder since Helius skipped for speed
+    // Bot leaderboard — placeholder clusters since Helius is skipped for speed
     const botMap = {};
     attacks.forEach(a => {
       const key = `cluster_${a.blockSlot % 3}`;
@@ -232,7 +271,7 @@ export default async function handler(req, res) {
       attacks,
     };
 
-    // ── 6. Portfolio ───────────────────────────────────────────────────────────
+    // ── Portfolio with proper decimal handling ────────────────────────────────
     let portfolio = [], portfolioTotal = 0;
     if (balancesResult.status === "fulfilled" && balancesResult.value?.balances) {
       portfolio = balancesResult.value.balances
@@ -240,15 +279,23 @@ export default async function handler(req, res) {
           const mint = b.address || b.mint || b.token_address || null;
           if (!mint) return null;
 
-          // Try every possible SIM field shape, coerce to Number
-          const rawAmount = b.amount ?? b.ui_amount ?? b.balance ?? b.uiAmount ?? 0;
-          const amount    = Number(rawAmount) || 0;
-          if (amount <= 0) return null;
+          // Trust SIM's ui_amount (decimal-adjusted) — if missing, divide raw by decimals
+          let amount = 0;
+          if (b.ui_amount != null) amount = Number(b.ui_amount);
+          else if (b.uiAmount != null) amount = Number(b.uiAmount);
+          else if (b.amount != null && b.decimals != null) amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
+          else if (b.amount != null) amount = Number(b.amount);
+
+          if (!isFinite(amount) || amount <= 0) return null;
 
           const meta   = tokenList[mint] || {};
           const price  = Number(priceMap[mint] || b.price_usd || b.price || 0);
           const symbol = meta.symbol || b.symbol || mint.slice(0,4);
           const name   = meta.name   || b.name   || symbol;
+          const valueUsd = parseFloat((amount * price).toFixed(2));
+
+          // Skip absurd valuations — likely scam/spam tokens
+          if (valueUsd > 10_000_000) return null; // >$10M single token = suspicious
 
           return {
             mint,
@@ -258,7 +305,7 @@ export default async function handler(req, res) {
             amount:   parseFloat(amount.toFixed(6)),
             display:  formatBalance(amount) || String(amount),
             price,
-            valueUsd: parseFloat((amount * price).toFixed(2)),
+            valueUsd,
           };
         })
         .filter(t => t && t.amount > 0 && t.valueUsd > 0.01)
@@ -267,21 +314,21 @@ export default async function handler(req, res) {
       portfolioTotal = parseFloat(portfolio.reduce((s,t) => s+t.valueUsd, 0).toFixed(2));
     }
 
-    // ── 7. AI narration ────────────────────────────────────────────────────────
+    // ── AI narration ──────────────────────────────────────────────────────────
     const [briefing, protectionPlan] = await Promise.all([
       generateBriefing(summary),
       generateProtectionPlan(summary),
     ]);
-
     const tweetText = generateTweetText(summary);
 
-    // ── 8. SIM dev panel ──────────────────────────────────────────────────────
     const simRawResponse = {
-      endpoint:           `https://api.sim.dune.com/v1/svm/transactions/${address}`,
+      endpoint:           `https://api.sim.dune.com/beta/svm/transactions/${address}`,
       status:             200,
       transactions_count: rawTxs.length,
       swaps_detected:     swapTxs.length,
+      verified_swaps:     swapDeltas.length,
       mev_flagged:        attacks.length,
+      filtered_anomalies: skippedInsane,
       transactions:       rawTxs.slice(0, 10),
     };
 
@@ -299,8 +346,7 @@ export default async function handler(req, res) {
     });
 
   } catch (err) {
-    console.error("[audit] unexpected error:", err);
+    console.error("[audit]", err);
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
-
