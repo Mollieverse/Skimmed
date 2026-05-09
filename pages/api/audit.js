@@ -370,7 +370,7 @@ export default async function handler(req, res) {
       generateBriefing(summary, tradingStats, badHabits),
       generateProtectionPlan(summary),
     ]);
-    const tweetText = generateTweetText(summary);
+    const tweetText = generateTweetText(summary, tradingStats, badHabits);
 
     const simRawResponse = {
       endpoint:           `https://api.sim.dune.com/beta/svm/transactions/${address}`,
@@ -405,3 +405,4 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
+
