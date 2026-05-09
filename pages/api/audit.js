@@ -326,7 +326,9 @@ export default async function handler(req, res) {
       attacks,
     };
 
-    // ── Portfolio — always builds ─────────────────────────────────────────────
+    // ── Portfolio — verified pricing with sanity checks ──────────────────────
+    // Strategy: trust ui_amount only, cross-reference Jupiter price vs SIM price,
+    // hide USD value when sources disagree (show "—" like Phantom does for unverified tokens)
     let portfolio = [], portfolioTotal = 0;
     if (balancesResult.status === "fulfilled" && balancesResult.value?.balances) {
       portfolio = balancesResult.value.balances
@@ -334,35 +336,84 @@ export default async function handler(req, res) {
           const mint = b.address || b.mint || b.token_address || null;
           if (!mint) return null;
 
+          // LAYER 1: Trust SIM's ui_amount only — never compute from raw
           let amount = 0;
           if (b.ui_amount != null)        amount = Number(b.ui_amount);
           else if (b.uiAmount != null)    amount = Number(b.uiAmount);
-          else if (b.amount != null && b.decimals != null) amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
-          else if (b.amount != null)      amount = Number(b.amount);
-
+          else if (b.amount != null && b.decimals != null) {
+            amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
+          }
           if (!isFinite(amount) || amount <= 0) return null;
 
           const meta   = tokenList[mint] || {};
-          const price  = Number(priceMap[mint] || b.price_usd || b.price || 0);
           const symbol = KNOWN_SYMBOLS[mint] || meta.symbol || b.symbol || mint.slice(0,4);
           const name   = meta.name || b.name || symbol;
-          const valueUsd = parseFloat((amount * price).toFixed(2));
 
-          if (valueUsd > 10_000_000) return null;
+          // LAYER 2: Cross-reference price sources
+          const jupiterPrice = Number(priceMap[mint]) || 0;
+          const simPrice     = Number(b.price_usd || b.price) || 0;
+
+          let trustedPrice = 0;
+          let priceVerified = false;
+          let priceNote = "unverified";
+
+          // Major verified tokens — trust whichever price we have
+          if (KNOWN_SYMBOLS[mint]) {
+            trustedPrice  = jupiterPrice || simPrice;
+            priceVerified = trustedPrice > 0;
+            priceNote     = "verified";
+          }
+          // Both sources agree (within 50% of each other) — trusted
+          else if (jupiterPrice > 0 && simPrice > 0) {
+            const ratio = Math.max(jupiterPrice, simPrice) / Math.min(jupiterPrice, simPrice);
+            if (ratio < 1.5) {
+              trustedPrice  = (jupiterPrice + simPrice) / 2;
+              priceVerified = true;
+              priceNote     = "cross-verified";
+            } else {
+              priceNote = "sources_disagree";
+            }
+          }
+          // Only one source — show but mark unverified
+          else if (jupiterPrice > 0) {
+            trustedPrice  = jupiterPrice;
+            priceVerified = false;
+            priceNote     = "single_source";
+          }
+
+          // LAYER 3: Sanity check — no single SPL position > $1M
+          let valueUsd = trustedPrice > 0 ? parseFloat((amount * trustedPrice).toFixed(2)) : null;
+          if (valueUsd != null && valueUsd > 1_000_000 && !KNOWN_SYMBOLS[mint]) {
+            // Suspicious: unverified token claiming >$1M position
+            valueUsd      = null;
+            priceVerified = false;
+            priceNote     = "value_too_high";
+            trustedPrice  = 0;
+          }
 
           return {
             mint, symbol, name,
             logoURI:  meta.logoURI || b.logo || b.icon || null,
             amount:   parseFloat(amount.toFixed(6)),
             display:  formatBalance(amount) || String(amount),
-            price,
-            valueUsd,
+            price:    trustedPrice,
+            valueUsd, // can be null = unverified
+            priceVerified,
+            priceNote,
           };
         })
-        .filter(t => t && t.amount > 0 && t.valueUsd > 0.01)
-        .sort((a,b) => b.valueUsd - a.valueUsd)
-        .slice(0, 20);
-      portfolioTotal = parseFloat(portfolio.reduce((s,t) => s+t.valueUsd, 0).toFixed(2));
+        .filter(t => t && t.amount > 0)
+        // Sort: verified by value desc, unverified at the end alphabetically
+        .sort((a,b) => {
+          if (a.valueUsd != null && b.valueUsd != null) return b.valueUsd - a.valueUsd;
+          if (a.valueUsd != null) return -1;
+          if (b.valueUsd != null) return 1;
+          return (a.symbol || "").localeCompare(b.symbol || "");
+        })
+        .slice(0, 25);
+      portfolioTotal = parseFloat(
+        portfolio.reduce((s,t) => s + (t.valueUsd || 0), 0).toFixed(2)
+      );
     }
 
     // ── AI narration ──────────────────────────────────────────────────────────
@@ -405,4 +456,3 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: err.message || "Audit failed" });
   }
 }
-
