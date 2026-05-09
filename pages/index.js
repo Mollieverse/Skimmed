@@ -494,8 +494,8 @@ export default function Skimmed() {
   return (
     <>
       <Head>
-        <title>SKIMMED — Solana MEV Damage Report</title>
-        <meta name="description" content="See how much MEV bots have extracted from your Solana swaps. Powered by Dune SIM + Claude AI."/>
+        <title>SKIMMED — Why You Keep Losing on Solana</title>
+        <meta name="description" content="Why do you keep losing money on Solana? SKIMMED reads your wallet and tells you exactly which patterns are killing your trades. Powered by Dune SIM + Claude AI."/>
         <link rel="icon" href="/skimmed-logo.png"/>
       </Head>
 
@@ -521,17 +521,17 @@ export default function Skimmed() {
 
         <section style={{padding:"64px clamp(16px,4vw,48px) 48px",maxWidth:820,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
           <div style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.16em",color:"var(--muted)",textTransform:"uppercase",marginBottom:14}}>
-            Forensic MEV Intelligence · Solana Mainnet
+            Solana Wallet Forensics · Powered by Dune SIM + Claude AI
           </div>
           <h1 style={{fontFamily:"var(--serif)",fontSize:"clamp(40px,8vw,68px)",fontWeight:300,lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:18}}>
-            How much value gets<br/>
-            <em style={{fontStyle:"italic",color:"var(--gold)"}}>skimmed</em>{" "}from your wallet —<br/>
-            by bots, and by yourself?
+            Why do you keep<br/>
+            <em style={{fontStyle:"italic",color:"var(--gold)"}}>losing money</em><br/>
+            on Solana?
           </h1>
           <p style={{fontSize:17,color:"var(--text)",fontWeight:300,maxWidth:540,lineHeight:1.75,marginBottom:36,opacity:0.9}}>
-            Forensic audit of your Solana trading damage.{" "}
+            Most Solana traders bleed money on patterns they can&apos;t see. Paste your wallet —{" "}
             <span style={{fontFamily:"var(--mono)",fontSize:14,color:"var(--blue-l)"}}>Dune SIM</span>{" "}
-            pulls your swap history. We detect MEV patterns, calculate PNL, expose bad habits, and Claude AI delivers the autopsy.
+            pulls your trading history, we surface the habits killing you, and Claude AI delivers the autopsy.
           </p>
 
           <div style={{border:"1px solid var(--border)",display:"flex",marginBottom:12}}>
@@ -563,9 +563,9 @@ export default function Skimmed() {
 
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",borderTop:"1px solid var(--border)",marginTop:56,paddingTop:28}}>
             {[
-              {val:"$370M+", label:"MEV extracted from Solana users"},
-              {val:"0.72%",  label:"Of blocks contain sandwich activity"},
-              {val:"3-tier", label:"Confidence verification system"},
+              {val:"90%",          label:"Of memecoin traders lose money"},
+              {val:"5 patterns",    label:"Behavioral red flags detected"},
+              {val:"AI-narrated",   label:"Personal autopsy briefing"},
             ].map((s,i)=>(
               <div key={i} style={{textAlign:"center",borderRight:i<2?"1px solid var(--border)":"none",padding:"0 10px"}}>
                 <div style={{fontFamily:"var(--serif)",fontSize:"clamp(22px,4vw,32px)",fontWeight:300,color:"var(--gold)",lineHeight:1,marginBottom:6}}>{s.val}</div>
@@ -608,8 +608,8 @@ export default function Skimmed() {
             {S?.attackCount === 0 && (!report.tradingStats || report.tradingStats.totalTrades === 0) && (!report.badHabits || report.badHabits.length === 0) && (
               <div className="au au1" style={{border:"1px solid #182418",background:"rgba(74,222,128,.06)",padding:"24px 18px",marginBottom:16,textAlign:"center"}}>
                 <div style={{fontSize:28,marginBottom:10}}>✓</div>
-                <div style={{fontFamily:"var(--serif)",fontSize:22,color:"var(--green-l)",marginBottom:8}}>No damage detected</div>
-                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>This wallet shows no MEV exposure, no closed trades, and no behavioral red flags in the analyzed swap history.</div>
+                <div style={{fontFamily:"var(--serif)",fontSize:22,color:"var(--green-l)",marginBottom:8}}>Clean wallet</div>
+                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>This wallet shows no closed trades or behavioral red flags in the analyzed history. Portfolio snapshot below.</div>
               </div>
             )}
 
@@ -633,7 +633,7 @@ export default function Skimmed() {
                 <div style={{padding:"20px 22px",display:"flex",alignItems:"center"}}><Ring score={S.riskScore}/></div>
               </div>
 
-              <div className="au au1" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2,padding:"13px 18px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
+              {(S.attackCount > 0 || (report.tradingStats?.totalTrades > 0)) && <div className="au au1" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2,padding:"13px 18px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
                 <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Includes:</span>
                 {S.attackCount > 0 && (
                   <span style={{fontFamily:"var(--mono)",fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 10px",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:"var(--red)"}}>
@@ -655,7 +655,7 @@ export default function Skimmed() {
                     {c.count} {c.key}
                   </span>
                 ))}
-              </div>
+              </div>}
 
               <div className="au au2" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                 <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)"}}>
@@ -862,4 +862,3 @@ export default function Skimmed() {
     </>
   );
 }
-
