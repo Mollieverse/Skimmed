@@ -1,7 +1,7 @@
 // pages/api/audit.js — Solana MEV audit with Jupiter Quote-based slippage detection
 export const maxDuration = 60;
 
-import { fetchWalletTransactions, fetchWalletBalances } from "../../lib/sim.js";
+import { fetchWalletTransactions, fetchWalletBalances, getMeta, getAccountKeys, getTokenBalances } from "../../lib/sim.js";
 import { fetchLivePrices, fetchTokenList, formatBalance } from "../../lib/prices.js";
 import { generateBriefing, generateProtectionPlan, generateTweetText } from "../../lib/claude.js";
 import { buildTradeLots, detectBadHabits, buildTradingStats } from "../../lib/trading.js";
@@ -35,34 +35,33 @@ const MAX_REASONABLE_LOSS_USD = 5000;   // single-attack cap
 const MIN_DETECTABLE_SLIPPAGE = 1.2;    // below = normal DEX fees
 const MAX_SWAPS_TO_ANALYZE    = 30;     // cap Jupiter Quote calls for speed
 
-// ── Filter DEX swaps from SIM ────────────────────────────────────────────────
+// ── Filter DEX swaps from SIM (defensive — handles multiple response shapes) ──
 function filterSwaps(txs) {
   return txs.filter(tx => {
-    const meta = tx.raw_transaction?.meta;
-    const msg  = tx.raw_transaction?.transaction?.message;
-    if (!meta || !msg || meta.err) return false;
-    const accounts = msg.accountKeys || [];
-    return accounts.some(k => DEX_SET.has(k)) &&
-      meta.preTokenBalances?.length > 0 &&
-      meta.postTokenBalances?.length > 0;
+    const meta = getMeta(tx);
+    if (!meta || meta.err) return false;
+    const accounts = getAccountKeys(tx);
+    const isDex = accounts.some(k => DEX_SET.has(typeof k === "string" ? k : k?.pubkey || ""));
+    const { pre, post } = getTokenBalances(tx);
+    return isDex && pre.length > 0 && post.length > 0;
   });
 }
 
-// ── Parse swap with proper decimal handling ──────────────────────────────────
+// ── Parse swap (defensive — handles multiple SIM response shapes) ──
 function parseSwap(tx) {
-  const pre  = tx.raw_transaction?.meta?.preTokenBalances  || [];
-  const post = tx.raw_transaction?.meta?.postTokenBalances || [];
-  const msg  = tx.raw_transaction?.transaction?.message;
-
+  const { pre, post } = getTokenBalances(tx);
   const allMints = [...new Set([...pre.map(b => b.mint), ...post.map(b => b.mint)])];
 
-  // Use uiAmount (already decimal-adjusted by SIM)
   const deltas = allMints.map(mint => {
-    const preAmt  = Number(pre.find(b  => b.mint === mint)?.uiTokenAmount?.uiAmount  || 0);
-    const postAmt = Number(post.find(b => b.mint === mint)?.uiTokenAmount?.uiAmount || 0);
-    const decimals = pre.find(b => b.mint === mint)?.uiTokenAmount?.decimals
-                  || post.find(b => b.mint === mint)?.uiTokenAmount?.decimals
-                  || 6;
+    const preEntry  = pre.find(b  => b.mint === mint);
+    const postEntry = post.find(b => b.mint === mint);
+    const preAmt  = Number(preEntry?.uiTokenAmount?.uiAmount  ?? preEntry?.ui_amount  ?? 0);
+    const postAmt = Number(postEntry?.uiTokenAmount?.uiAmount ?? postEntry?.ui_amount ?? 0);
+    const decimals = preEntry?.uiTokenAmount?.decimals
+                  ?? postEntry?.uiTokenAmount?.decimals
+                  ?? preEntry?.decimals
+                  ?? postEntry?.decimals
+                  ?? 6;
     return { mint, delta: postAmt - preAmt, decimals };
   }).filter(d => Math.abs(d.delta) > 0.000001);
 
@@ -70,8 +69,9 @@ function parseSwap(tx) {
   const bought = deltas.find(d => d.delta > 0);
   if (!sold || !bought) return null;
 
-  const accounts   = msg?.accountKeys || [];
-  const dexProgram = accounts.find(a => DEX_SET.has(a));
+  const accounts = getAccountKeys(tx);
+  const dexProgram = accounts.find(a => DEX_SET.has(typeof a === "string" ? a : a?.pubkey || ""));
+  const dexProgramKey = typeof dexProgram === "string" ? dexProgram : dexProgram?.pubkey;
 
   return {
     inputMint:      sold.mint,
@@ -80,9 +80,9 @@ function parseSwap(tx) {
     outputAmount:   bought.delta,
     inputDecimals:  sold.decimals,
     outputDecimals: bought.decimals,
-    blockSlot:      tx.block_slot,
-    blockTime:      tx.block_time,
-    dexLabel:       PROGRAM_LABELS[dexProgram] || "DEX Swap",
+    blockSlot:      tx.block_slot || tx.blockSlot || tx.slot,
+    blockTime:      tx.block_time || tx.blockTime || tx.timestamp,
+    dexLabel:       PROGRAM_LABELS[dexProgramKey] || "DEX Swap",
   };
 }
 
@@ -166,6 +166,22 @@ export default async function handler(req, res) {
 
     const rawTxs = simResult.value?.transactions || [];
     console.log(`[audit] ${rawTxs.length} txs for ${address}`);
+
+    // DIAGNOSTIC: log the structure of the first transaction
+    if (rawTxs.length > 0) {
+      const t = rawTxs[0];
+      console.log(`[audit] sample tx keys: ${Object.keys(t).join(", ")}`);
+      const meta = getMeta(t);
+      if (meta) {
+        console.log(`[audit] sample meta keys: ${Object.keys(meta).join(", ")}`);
+        const { pre, post } = getTokenBalances(t);
+        console.log(`[audit] sample preTokenBalances: ${pre.length}, postTokenBalances: ${post.length}`);
+      } else {
+        console.log(`[audit] NO META FOUND on sample tx — checking other paths`);
+      }
+      const accounts = getAccountKeys(t);
+      console.log(`[audit] sample accountKeys count: ${accounts.length}, first 3: ${JSON.stringify(accounts.slice(0,3))}`);
+    }
 
     const swapTxs    = filterSwaps(rawTxs);
     const swapDeltas = swapTxs.map(parseSwap).filter(Boolean);
