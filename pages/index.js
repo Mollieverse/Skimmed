@@ -144,7 +144,7 @@ function Portfolio({ portfolio, total }) {
         const name=t?.name||"Unknown";
         const display=t?.display??"0";
         const price=Number(t?.price)||0;
-        const value=Number(t?.valueUsd)||0;
+        const value=t?.valueUsd != null ? Number(t.valueUsd) : null;
         const mint=t?.mint||`unk-${i}`;
         const logo=t?.logoURI;
         return (
@@ -167,12 +167,21 @@ function Portfolio({ portfolio, total }) {
             </div>
             <div style={{textAlign:"right",minWidth:80}}>
               <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--text)"}}>{display}</div>
-              <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>@ ${price>=1?price.toFixed(2):price.toFixed(6)}</div>
+              <div style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)"}}>
+                {price > 0 ? `@ $${price >= 1 ? price.toFixed(2) : price.toFixed(6)}` : "@ —"}
+              </div>
             </div>
             <div style={{textAlign:"right",minWidth:80}}>
-              <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:value>100?"var(--gold)":"var(--text)"}}>
-                ${value.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
-              </div>
+              {t?.valueUsd != null ? (
+                <div style={{fontFamily:"var(--mono)",fontSize:15,fontWeight:600,color:t.valueUsd>100?"var(--gold)":"var(--text)"}}>
+                  ${t.valueUsd.toLocaleString("en-US",{minimumFractionDigits:2,maximumFractionDigits:2})}
+                </div>
+              ) : (
+                <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:2}}>
+                  <div style={{fontFamily:"var(--mono)",fontSize:18,color:"var(--muted)",lineHeight:1}}>—</div>
+                  <div style={{fontFamily:"var(--mono)",fontSize:9,color:"var(--muted)",letterSpacing:"0.05em",opacity:0.7}}>unverified</div>
+                </div>
+              )}
             </div>
           </div>
         );
