@@ -245,93 +245,139 @@ function SimStrip({ endpoint }) {
   );
 }
 
-// ── Share Card Generator (Canvas — uses logo overlay) ────────────────────────
-async function generateShareCard(summary, wallet) {
-  const canvas=document.createElement("canvas");
-  canvas.width=1200; canvas.height=630;
-  const ctx=canvas.getContext("2d");
+// ── Share Card Generator (Adaptive — leads with most dramatic finding) ────────
+async function generateShareCard(report) {
+  const summary = report.summary || {};
+  const stats   = report.tradingStats || {};
+  const habits  = report.badHabits || [];
+  const wallet  = report.wallet || "";
+
+  const mevLoss     = Number(summary.totalLossUsd) || 0;
+  const tradingPnl  = Number(stats.totalPnl) || 0;
+  const tradingLoss = tradingPnl < 0 ? Math.abs(tradingPnl) : 0;
+  const totalDamage = mevLoss + tradingLoss;
+  const worstHabit  = habits[0] || null;
+
+  // Decide headline framing
+  let headline, headlineLabel;
+  if (totalDamage > 0) {
+    headline      = `-$${totalDamage.toFixed(2)}`;
+    headlineLabel = mevLoss > tradingLoss
+      ? "ESTIMATED MEV EXTRACTION"
+      : tradingLoss > 0
+        ? "TOTAL TRADING DAMAGE"
+        : "ESTIMATED LOSSES";
+  } else if (worstHabit) {
+    headline      = worstHabit.title.length > 28 ? worstHabit.title.slice(0,28)+"…" : worstHabit.title;
+    headlineLabel = "BEHAVIORAL PATTERN DETECTED";
+  } else {
+    headline      = "CLEAN";
+    headlineLabel = "NO DAMAGE DETECTED";
+  }
+
+  const canvas = document.createElement("canvas");
+  canvas.width = 1200;
+  canvas.height = 630;
+  const ctx = canvas.getContext("2d");
 
   // Background
-  ctx.fillStyle="#060504"; ctx.fillRect(0,0,1200,630);
+  ctx.fillStyle = "#060504";
+  ctx.fillRect(0, 0, 1200, 630);
 
-  // Gold + red accent lines
-  ctx.fillStyle="#e8a020"; ctx.fillRect(0,0,1200,4);
-  ctx.fillStyle="#ef4444"; ctx.fillRect(0,626,1200,4);
+  // Top + bottom accent lines
+  ctx.fillStyle = "#e8a020"; ctx.fillRect(0, 0, 1200, 4);
+  ctx.fillStyle = totalDamage > 0 ? "#ef4444" : "#4ade80";
+  ctx.fillRect(0, 626, 1200, 4);
 
   // Subtle grain
-  ctx.globalAlpha=0.03;
-  for(let i=0;i<300;i++){
-    ctx.fillStyle="#fff";
-    ctx.fillRect(Math.random()*1200,Math.random()*630,2,2);
+  ctx.globalAlpha = 0.03;
+  for (let i = 0; i < 300; i++) {
+    ctx.fillStyle = "#fff";
+    ctx.fillRect(Math.random()*1200, Math.random()*630, 2, 2);
   }
-  ctx.globalAlpha=1;
+  ctx.globalAlpha = 1;
 
-  // Load + draw logo
-  const logo=new Image();
-  logo.crossOrigin="anonymous";
-  await new Promise((res,rej)=>{
-    logo.onload=res; logo.onerror=res; // continue even if logo fails
-    logo.src="/skimmed-logo.png";
+  // Load logo
+  const logo = new Image();
+  logo.crossOrigin = "anonymous";
+  await new Promise((res) => {
+    logo.onload = res; logo.onerror = res;
+    logo.src = "/skimmed-logo.png";
   });
-
-  if(logo.complete && logo.naturalWidth){
-    ctx.drawImage(logo,80,60,90,90);
+  if (logo.complete && logo.naturalWidth) {
+    ctx.drawImage(logo, 80, 60, 90, 90);
   }
 
-  // Wordmark next to logo
-  ctx.fillStyle="#f0e8d8";
-  ctx.font="300 60px Georgia, serif";
-  ctx.fillText("SKIMMED",195,128);
+  // Wordmark + subtitle
+  ctx.fillStyle = "#f0e8d8";
+  ctx.font = "300 60px Georgia, serif";
+  ctx.fillText("SKIMMED", 195, 128);
 
-  // Subtitle
-  ctx.fillStyle="#a89e8c";
-  ctx.font="400 18px 'Courier New', monospace";
-  ctx.fillText("MEV LOSS REPORT  ·  SOLANA WALLET ANALYSIS",195,158);
+  ctx.fillStyle = "#a89e8c";
+  ctx.font = "400 18px 'Courier New', monospace";
+  ctx.fillText("TRADING AUTOPSY · SOLANA WALLET ANALYSIS", 195, 158);
 
   // Divider
-  ctx.fillStyle="#1e1a15";
-  ctx.fillRect(80,200,1040,1);
+  ctx.fillStyle = "#1e1a15";
+  ctx.fillRect(80, 200, 1040, 1);
 
   // Wallet (truncated)
-  ctx.fillStyle="#a89e8c";
-  ctx.font="400 16px 'Courier New', monospace";
-  ctx.fillText(`Wallet: ${wallet.slice(0,8)}…${wallet.slice(-8)}`,80,235);
+  ctx.fillStyle = "#a89e8c";
+  ctx.font = "400 16px 'Courier New', monospace";
+  ctx.fillText(`Wallet: ${wallet.slice(0, 8)}…${wallet.slice(-8)}`, 80, 235);
 
-  // Total loss — dominant
-  const lossDisplay=`$${(summary.totalLossUsd||0).toFixed(2)}`;
-  ctx.fillStyle="#ef4444";
-  ctx.font="300 110px Georgia, serif";
-  ctx.fillText(lossDisplay,80,355);
+  // Headline — dynamic color based on what's being shown
+  const headlineColor = totalDamage > 0 ? "#ef4444" : worstHabit ? "#e8a020" : "#4ade80";
+  ctx.fillStyle = headlineColor;
+  ctx.font = totalDamage > 0 ? "300 110px Georgia, serif" : "italic 60px Georgia, serif";
+  ctx.fillText(headline, 80, 360);
 
-  ctx.fillStyle="#a89e8c";
-  ctx.font="400 18px 'Courier New', monospace";
-  ctx.fillText("ESTIMATED MEV EXTRACTION",80,388);
+  ctx.fillStyle = "#a89e8c";
+  ctx.font = "400 18px 'Courier New', monospace";
+  ctx.fillText(headlineLabel, 80, 393);
 
-  // Stats
-  const stats=[
-    {label:"SANDWICH PATTERNS", value:String(summary.attackCount||0)},
-    {label:"EXPOSURE RATE",     value:summary.exposureRate||"0%"},
-    {label:"RISK SCORE",        value:`${summary.riskScore||0}/100`},
-    {label:"HIGH CONFIDENCE",   value:`${summary.confidenceBreakdown?.high||0}`},
-  ];
-  stats.forEach((s,i)=>{
-    const x=80+i*280;
-    ctx.fillStyle="#f0e8d8";
-    ctx.font="700 38px 'Courier New', monospace";
-    ctx.fillText(s.value,x,490);
-    ctx.fillStyle="#a89e8c";
-    ctx.font="400 14px 'Courier New', monospace";
-    ctx.fillText(s.label,x,518);
+  // Stats row — adaptive based on what data exists
+  const statsRow = [];
+
+  if (stats.totalTrades > 0) {
+    statsRow.push({ label: "CLOSED TRADES", value: String(stats.totalTrades) });
+    statsRow.push({ label: "WIN RATE",      value: `${stats.winRate}%`,    color: stats.winRate >= 50 ? "#4ade80" : "#ef4444" });
+  }
+  if (habits.length > 0) {
+    statsRow.push({ label: "BAD HABITS", value: String(habits.length), color: "#ef4444" });
+  }
+  if (summary.attackCount > 0) {
+    statsRow.push({ label: "MEV EVENTS", value: String(summary.attackCount), color: "#ef4444" });
+  }
+  if (summary.riskScore != null) {
+    const riskColor = summary.riskScore >= 70 ? "#ef4444" : summary.riskScore >= 40 ? "#e8a020" : "#4ade80";
+    statsRow.push({ label: "RISK SCORE", value: `${summary.riskScore}/100`, color: riskColor });
+  }
+  // Pad if we have <4 stats
+  while (statsRow.length < 4) {
+    statsRow.push({ label: "—", value: "—", color: "#5a5248" });
+  }
+  // Cap at 4
+  const display = statsRow.slice(0, 4);
+
+  display.forEach((s, i) => {
+    const x = 80 + i * 280;
+    ctx.fillStyle = s.color || "#f0e8d8";
+    ctx.font = "700 38px 'Courier New', monospace";
+    ctx.fillText(s.value, x, 490);
+    ctx.fillStyle = "#a89e8c";
+    ctx.font = "400 14px 'Courier New', monospace";
+    ctx.fillText(s.label, x, 518);
   });
 
   // Bottom divider
-  ctx.fillStyle="#1e1a15";
-  ctx.fillRect(80,545,1040,1);
+  ctx.fillStyle = "#1e1a15";
+  ctx.fillRect(80, 545, 1040, 1);
 
   // Footer
-  ctx.fillStyle="#5a5248";
-  ctx.font="400 16px 'Courier New', monospace";
-  ctx.fillText("Generated by SKIMMED  ·  skimmed.vercel.app  ·  Powered by Dune SIM + Claude AI",80,580);
+  ctx.fillStyle = "#5a5248";
+  ctx.font = "400 16px 'Courier New', monospace";
+  ctx.fillText("Generated by SKIMMED  ·  skimmed.vercel.app  ·  Powered by Dune SIM + Claude AI", 80, 580);
 
   return canvas.toDataURL("image/png");
 }
@@ -412,7 +458,7 @@ export default function Skimmed() {
     if(!report) return;
     setSharing(true);
     try{
-      const dataUrl=await generateShareCard(report.summary,report.wallet);
+      const dataUrl=await generateShareCard(report);
       const link=document.createElement("a");
       link.download="skimmed-mev-report.png";
       link.href=dataUrl;
@@ -791,3 +837,4 @@ export default function Skimmed() {
     </>
   );
 }
+
