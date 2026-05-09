@@ -326,97 +326,70 @@ export default async function handler(req, res) {
       attacks,
     };
 
-    // ── Portfolio — verified pricing with sanity checks ──────────────────────
-    // Strategy: trust ui_amount only, cross-reference Jupiter price vs SIM price,
-    // hide USD value when sources disagree (show "—" like Phantom does for unverified tokens)
-    let portfolio = [], portfolioTotal = 0;
+    // ── Portfolio — headline holdings only (Phantom-clean) ──────────────────
+    // We display ONLY major Solana tokens with reliable pricing.
+    // Total = sum of these. Other tokens noted as "+ N unpriced" below the list.
+    const HEADLINE_MINTS = {
+      "So11111111111111111111111111111111111111112":   { symbol: "SOL",  name: "Solana" },
+      "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v": { symbol: "USDC", name: "USD Coin" },
+      "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB":  { symbol: "USDT", name: "Tether" },
+      "DezXAZ8z7PnrnRJjz3wXBoRgixCa6xjnB7YaB1pPB263": { symbol: "BONK", name: "Bonk" },
+      "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN":  { symbol: "JUP",  name: "Jupiter" },
+      "EKpQGSJtjMFqKZ9KQanSqYXRcF8fBopzLHYxdM65zcjm": { symbol: "WIF",  name: "dogwifhat" },
+      "mSoLzYCxHdYgdzU16g5QSh3i5K3z3KZK7ytfqcJm7So":  { symbol: "mSOL", name: "Marinade SOL" },
+      "HZ1JovNiVvGrGNiiYvEozEVgZ58xaU3RKwX8eACQBCt3": { symbol: "PYTH", name: "Pyth" },
+    };
+
+    let portfolio = [];
+    let portfolioTotal = 0;
+    let otherTokensCount = 0;
+
     if (balancesResult.status === "fulfilled" && balancesResult.value?.balances) {
-      portfolio = balancesResult.value.balances
-        .map(b => {
-          const mint = b.address || b.mint || b.token_address || null;
-          if (!mint) return null;
+      const allBalances = balancesResult.value.balances;
 
-          // LAYER 1: Trust SIM's ui_amount only — never compute from raw
-          let amount = 0;
-          if (b.ui_amount != null)        amount = Number(b.ui_amount);
-          else if (b.uiAmount != null)    amount = Number(b.uiAmount);
-          else if (b.amount != null && b.decimals != null) {
-            amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
-          }
-          if (!isFinite(amount) || amount <= 0) return null;
+      for (const b of allBalances) {
+        const mint = b.address || b.mint || b.token_address || null;
+        if (!mint) continue;
 
-          const meta   = tokenList[mint] || {};
-          const symbol = KNOWN_SYMBOLS[mint] || meta.symbol || b.symbol || mint.slice(0,4);
-          const name   = meta.name || b.name || symbol;
+        // Trust SIM's ui_amount only
+        let amount = 0;
+        if (b.ui_amount != null)        amount = Number(b.ui_amount);
+        else if (b.uiAmount != null)    amount = Number(b.uiAmount);
+        else if (b.amount != null && b.decimals != null) {
+          amount = Number(b.amount) / Math.pow(10, Number(b.decimals));
+        }
+        if (!isFinite(amount) || amount <= 0) continue;
 
-          // LAYER 2: Cross-reference price sources
-          const jupiterPrice = Number(priceMap[mint]) || 0;
-          const simPrice     = Number(b.price_usd || b.price) || 0;
+        // Headline holding? Show it.
+        if (HEADLINE_MINTS[mint]) {
+          const meta = tokenList[mint] || {};
+          const head = HEADLINE_MINTS[mint];
+          const price = Number(priceMap[mint]) || Number(b.price_usd) || Number(b.price) || 0;
+          const valueUsd = parseFloat((amount * price).toFixed(2));
 
-          let trustedPrice = 0;
-          let priceVerified = false;
-          let priceNote = "unverified";
+          portfolio.push({
+            mint,
+            symbol:  head.symbol,
+            name:    head.name,
+            logoURI: meta.logoURI || b.logo || b.icon || null,
+            amount:  parseFloat(amount.toFixed(6)),
+            display: formatBalance(amount) || String(amount),
+            price,
+            valueUsd,
+          });
+        } else {
+          // Other token — count it but don't display
+          otherTokensCount++;
+        }
+      }
 
-          // Major verified tokens — trust whichever price we have
-          if (KNOWN_SYMBOLS[mint]) {
-            trustedPrice  = jupiterPrice || simPrice;
-            priceVerified = trustedPrice > 0;
-            priceNote     = "verified";
-          }
-          // Both sources agree (within 50% of each other) — trusted
-          else if (jupiterPrice > 0 && simPrice > 0) {
-            const ratio = Math.max(jupiterPrice, simPrice) / Math.min(jupiterPrice, simPrice);
-            if (ratio < 1.5) {
-              trustedPrice  = (jupiterPrice + simPrice) / 2;
-              priceVerified = true;
-              priceNote     = "cross-verified";
-            } else {
-              priceNote = "sources_disagree";
-            }
-          }
-          // Only one source — show but mark unverified
-          else if (jupiterPrice > 0) {
-            trustedPrice  = jupiterPrice;
-            priceVerified = false;
-            priceNote     = "single_source";
-          }
-
-          // LAYER 3: Sanity check — no single SPL position > $1M
-          let valueUsd = trustedPrice > 0 ? parseFloat((amount * trustedPrice).toFixed(2)) : null;
-          if (valueUsd != null && valueUsd > 1_000_000 && !KNOWN_SYMBOLS[mint]) {
-            // Suspicious: unverified token claiming >$1M position
-            valueUsd      = null;
-            priceVerified = false;
-            priceNote     = "value_too_high";
-            trustedPrice  = 0;
-          }
-
-          return {
-            mint, symbol, name,
-            logoURI:  meta.logoURI || b.logo || b.icon || null,
-            amount:   parseFloat(amount.toFixed(6)),
-            display:  formatBalance(amount) || String(amount),
-            price:    trustedPrice,
-            valueUsd, // can be null = unverified
-            priceVerified,
-            priceNote,
-          };
-        })
-        .filter(t => t && t.amount > 0)
-        // Sort: verified by value desc, unverified at the end alphabetically
-        .sort((a,b) => {
-          if (a.valueUsd != null && b.valueUsd != null) return b.valueUsd - a.valueUsd;
-          if (a.valueUsd != null) return -1;
-          if (b.valueUsd != null) return 1;
-          return (a.symbol || "").localeCompare(b.symbol || "");
-        })
-        .slice(0, 25);
+      portfolio.sort((a, b) => (b.valueUsd || 0) - (a.valueUsd || 0));
       portfolioTotal = parseFloat(
-        portfolio.reduce((s,t) => s + (t.valueUsd || 0), 0).toFixed(2)
+        portfolio.reduce((s, t) => s + (t.valueUsd || 0), 0).toFixed(2)
       );
     }
 
-    // ── AI narration ──────────────────────────────────────────────────────────
+        // ── AI narration ──────────────────────────────────────────────────────────
     const [briefing, protectionPlan] = await Promise.all([
       generateBriefing(summary, tradingStats, badHabits),
       generateProtectionPlan(summary),
@@ -447,6 +420,7 @@ export default async function handler(req, res) {
       tweetText,
       portfolio,
       portfolioTotal,
+      otherTokensCount,
       simRawResponse,
       generatedAt: new Date().toISOString(),
     });
