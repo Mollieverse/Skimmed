@@ -79,7 +79,7 @@ function BarChart({ data }) {
   return (
     <div style={{padding:"20px 20px 18px"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:20}}>
-        <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Monthly MEV Loss</span>
+        <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Monthly Damage Timeline</span>
         <span style={{fontFamily:"var(--mono)",fontSize:14,color:"var(--red)",fontWeight:600}}>${total.toFixed(2)} total</span>
       </div>
       <div style={{display:"flex",alignItems:"flex-end",gap:8,height:80,marginBottom:14}}>
@@ -596,19 +596,25 @@ export default function Skimmed() {
               </div>
             </div>
 
-            {S?.attackCount === 0 && (
+            {S?.attackCount === 0 && (!report.tradingStats || report.tradingStats.totalTrades === 0) && (!report.badHabits || report.badHabits.length === 0) && (
               <div className="au au1" style={{border:"1px solid #182418",background:"rgba(74,222,128,.06)",padding:"24px 18px",marginBottom:16,textAlign:"center"}}>
                 <div style={{fontSize:28,marginBottom:10}}>✓</div>
-                <div style={{fontFamily:"var(--serif)",fontSize:22,color:"var(--green-l)",marginBottom:8}}>No MEV patterns detected</div>
-                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>Your swap history shows no MEV exposure. Portfolio and historical data still shown below.</div>
+                <div style={{fontFamily:"var(--serif)",fontSize:22,color:"var(--green-l)",marginBottom:8}}>No damage detected</div>
+                <div style={{fontFamily:"var(--mono)",fontSize:13,color:"var(--muted)",maxWidth:480,margin:"0 auto",lineHeight:1.7}}>This wallet shows no MEV exposure, no closed trades, and no behavioral red flags in the analyzed swap history.</div>
               </div>
             )}
 
               <div className="au au1" style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr auto",border:"1px solid var(--border)",marginBottom:2}}>
                 {[
-                  {val:`$${S.totalLossUsd?.toFixed(2)}`, label:"Total Extracted",   color:"var(--red)"},
-                  {val:S.attackCount,                     label:"MEV Events",         color:"var(--gold)"},
-                  {val:S.exposureRate,                    label:"Swaps Targeted",     color:"var(--text)"},
+                  {val:report.tradingStats?.totalPnl != null ? `${report.tradingStats.totalPnl >= 0 ? "+" : "−"}$${Math.abs(report.tradingStats.totalPnl).toFixed(2)}` : `$${S.totalLossUsd?.toFixed(2)}`,
+                   label:"Realized PNL",
+                   color:report.tradingStats?.totalPnl >= 0 ? "var(--green-l)" : "var(--red)"},
+                  {val:report.tradingStats?.totalTrades || 0,
+                   label:"Closed Trades",
+                   color:"var(--gold)"},
+                  {val:report.badHabits?.length || 0,
+                   label:"Bad Habits",
+                   color:report.badHabits?.length > 0 ? "var(--red)" : "var(--text)"},
                 ].map((s,i)=>(
                   <div key={i} style={{padding:"22px 16px",borderRight:"1px solid var(--border)"}}>
                     <div style={{fontFamily:"var(--serif)",fontSize:"clamp(26px,5vw,40px)",fontWeight:300,color:s.color,lineHeight:1,marginBottom:8}}>{s.val}</div>
@@ -619,7 +625,17 @@ export default function Skimmed() {
               </div>
 
               <div className="au au1" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2,padding:"13px 18px",display:"flex",gap:10,flexWrap:"wrap",alignItems:"center"}}>
-                <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Confidence:</span>
+                <span style={{fontFamily:"var(--mono)",fontSize:11,color:"var(--muted)",letterSpacing:"0.1em",textTransform:"uppercase"}}>Includes:</span>
+                {S.attackCount > 0 && (
+                  <span style={{fontFamily:"var(--mono)",fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 10px",background:"rgba(239,68,68,.08)",border:"1px solid rgba(239,68,68,.25)",color:"var(--red)"}}>
+                    {S.attackCount} MEV {S.attackCount === 1 ? "EVENT" : "EVENTS"} · ${S.totalLossUsd?.toFixed(2)}
+                  </span>
+                )}
+                {report.tradingStats?.winRate != null && report.tradingStats.totalTrades > 0 && (
+                  <span style={{fontFamily:"var(--mono)",fontSize:11,letterSpacing:"0.08em",textTransform:"uppercase",padding:"3px 10px",background:"rgba(232,160,32,.08)",border:"1px solid rgba(232,160,32,.25)",color:"var(--gold)"}}>
+                    {report.tradingStats.winRate}% WIN RATE
+                  </span>
+                )}
                 {[
                   {key:"HIGH",   count:S.confidenceBreakdown?.high,   ...CONF.HIGH},
                   {key:"MEDIUM", count:S.confidenceBreakdown?.medium, ...CONF.MEDIUM},
@@ -634,7 +650,7 @@ export default function Skimmed() {
 
               <div className="au au2" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                 <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)"}}>
-                  <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Intelligence Briefing — Claude AI</span>
+                  <span style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.1em",color:"var(--muted)",textTransform:"uppercase"}}>Forensic Briefing — Claude AI</span>
                 </div>
                 <div style={{padding:"22px 22px",fontFamily:"var(--serif)",fontSize:18,fontStyle:"italic",lineHeight:1.85,color:"#c8b89a"}}>{report.briefing}</div>
               </div>
