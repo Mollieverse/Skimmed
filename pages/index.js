@@ -394,17 +394,17 @@ async function generateShareCard(report) {
 function LoadingScreen({ wallet }) {
   const [step,setStep]=useState(0);
   const steps=[
-    {label:"Connecting to Dune SIM…",       tag:"SIM"},
-    {label:"Fetching Solana swap history…",  tag:"SIM"},
-    {label:"Filtering verified tokens…",     tag:"MEV"},
-    {label:"Calculating MEV losses…",        tag:"MEV"},
-    {label:"Generating AI briefing…",        tag:"AI"},
+    {label:"Connecting to Dune SIM…",          tag:"SIM"},
+    {label:"Fetching transaction history…",    tag:"SIM"},
+    {label:"Pairing buys with sells…",         tag:"PNL"},
+    {label:"Detecting behavioral patterns…",   tag:"PNL"},
+    {label:"Generating AI briefing…",          tag:"AI"},
   ];
   useState(()=>{
     const t=setInterval(()=>setStep(s=>Math.min(s+1,steps.length-1)),700);
     return()=>clearInterval(t);
   },[]);
-  const tagColor={SIM:"var(--blue-l)",MEV:"var(--red)",AI:"var(--gold)"};
+  const tagColor={SIM:"var(--blue-l)",PNL:"var(--red)",MEV:"var(--red)",AI:"var(--gold)"};
   return (
     <div style={{textAlign:"center",padding:"70px 20px"}}>
       <div style={{fontFamily:"var(--serif)",fontSize:17,fontStyle:"italic",color:"var(--muted)",marginBottom:28}}>
@@ -426,7 +426,7 @@ function LoadingScreen({ wallet }) {
           <span style={{color:i<step?"var(--green-l)":i===step?"var(--gold)":"var(--dim)"}}>{i<step?"✓":i===step?"→":"○"}</span>
           {s.label}
           {i<=step&&<span style={{fontFamily:"var(--mono)",fontSize:10,padding:"1px 7px",
-            background:`rgba(${s.tag==="SIM"?"96,165,250":s.tag==="MEV"?"239,68,68":"232,160,32"},.1)`,
+            background:`rgba(${s.tag==="SIM"?"96,165,250":(s.tag==="MEV"||s.tag==="PNL")?"239,68,68":"232,160,32"},.1)`,
             color:tagColor[s.tag],letterSpacing:"0.08em"}}>{s.tag}</span>}
         </div>
       ))}
@@ -520,7 +520,7 @@ export default function Skimmed() {
 
         <section style={{padding:"64px clamp(16px,4vw,48px) 48px",maxWidth:820,margin:"0 auto",width:"100%",boxSizing:"border-box"}}>
           <div style={{fontFamily:"var(--mono)",fontSize:12,letterSpacing:"0.16em",color:"var(--muted)",textTransform:"uppercase",marginBottom:14}}>
-            Solana Wallet Forensics · Powered by Dune SIM + Claude AI
+            For Solana memecoin traders · Powered by Dune SIM + Claude AI
           </div>
           <h1 style={{fontFamily:"var(--serif)",fontSize:"clamp(40px,8vw,68px)",fontWeight:300,lineHeight:1.05,letterSpacing:"-0.03em",marginBottom:18}}>
             Why do you keep<br/>
@@ -528,9 +528,9 @@ export default function Skimmed() {
             on Solana?
           </h1>
           <p style={{fontSize:17,color:"var(--text)",fontWeight:300,maxWidth:540,lineHeight:1.75,marginBottom:36,opacity:0.9}}>
-            Most Solana traders bleed money on patterns they can&apos;t see. Paste your wallet —{" "}
+            90% of Solana memecoin traders lose money — bleeding capital on patterns they can&apos;t see.{" "}
             <span style={{fontFamily:"var(--mono)",fontSize:14,color:"var(--blue-l)"}}>Dune SIM</span>{" "}
-            pulls your trading history, we surface the habits killing you, and Claude AI delivers the autopsy.
+            pulls your trading history. We surface your bad habits. Claude AI delivers the autopsy.
           </p>
 
           <div style={{border:"1px solid var(--border)",display:"flex",marginBottom:12}}>
@@ -742,7 +742,9 @@ export default function Skimmed() {
                 </div>
               )}
 
+              {/* Portfolio section hidden — focusing on Dune SIM track. Restore by uncommenting:
               <div className="au au2"><Portfolio portfolio={report.portfolio} total={report.portfolioTotal} otherCount={report.otherTokensCount}/></div>
+              */}
 
               {S.attackCount > 0 && <div className="au au3" style={{border:"1px solid var(--border)",borderTop:"none",marginBottom:2}}>
                 <div style={{padding:"11px 18px",background:"var(--card)",borderBottom:"1px solid var(--b2)",display:"flex",justifyContent:"space-between",alignItems:"center"}}>
